@@ -259,7 +259,7 @@ def render_create_project(
             "expert",
             "Experto Tecnoparque",
             experts,
-            require_email=False,
+            require_email=True,
         )
 
     with st.container(border=True):
@@ -276,12 +276,11 @@ def render_create_project(
         talent_assignments: dict[str, dict[str, Any]] = {}
         for role in selected_roles:
             st.markdown("---")
-            require_email = role == "interlocutor"
             talent_assignments[role] = _person_assignment(
                 f"talent_{role}",
                 f"Talento {TALENT_ROLES[role]}",
                 talents,
-                require_email=require_email,
+                require_email=True,
             )
 
     if st.button("Crear proyecto", type="primary", use_container_width=True):
@@ -305,24 +304,28 @@ def render_create_project(
                 _validate_new_person(
                     expert_assignment["data"],
                     "el experto",
-                    require_email=False,
+                    require_email=True,
                 )
+            )
+        elif not expert_assignment["person"].get("email"):
+            errors.append(
+                "El experto seleccionado no tiene correo electrónico registrado."
             )
 
         for role, assignment in talent_assignments.items():
-            require_email = role == "interlocutor"
             label = f"el talento {TALENT_ROLES[role]}"
             if assignment["mode"] == "new":
                 errors.extend(
                     _validate_new_person(
                         assignment["data"],
                         label,
-                        require_email=require_email,
+                        require_email=True,
                     )
                 )
-            elif require_email and not assignment["person"].get("email"):
+            elif not assignment["person"].get("email"):
                 errors.append(
-                    "El talento interlocutor seleccionado no tiene correo electrónico registrado."
+                    f"El talento {TALENT_ROLES[role].lower()} seleccionado "
+                    "no tiene correo electrónico registrado."
                 )
 
         if errors:
@@ -590,7 +593,7 @@ def render_edit_project(
                 expert_update = _editable_person_fields(
                     "project_expert",
                     experts_by_id[expert_id],
-                    require_email=False,
+                    require_email=True,
                 )
 
             unique_talents: dict[int, dict[str, Any]] = {}
@@ -606,7 +609,7 @@ def render_edit_project(
                     talent_updates[talent_id] = _editable_person_fields(
                         f"project_talent_{talent_id}",
                         talent,
-                        require_email="interlocutor" in roles,
+                        require_email=True,
                     )
 
     actions = st.columns([1, 1, 3])
@@ -637,28 +640,33 @@ def render_edit_project(
         errors.append("La fecha de finalización no puede ser anterior a la fecha de inicio.")
     if not talent_ids_by_role:
         errors.append("Debes asociar al menos un talento.")
-    interlocutor_id = talent_ids_by_role.get("interlocutor")
-    if interlocutor_id and not talents_by_id[interlocutor_id].get("email"):
-        pending_interlocutor = talent_updates.get(interlocutor_id)
-        if not pending_interlocutor or not pending_interlocutor["email"].strip():
-            errors.append("El talento interlocutor seleccionado no tiene correo electrónico.")
+    if not experts_by_id[expert_id].get("email"):
+        if not expert_update or not expert_update["email"].strip():
+            errors.append("El experto seleccionado no tiene correo electrónico.")
+    for talent_id in set(talent_ids_by_role.values()):
+        if not talents_by_id[talent_id].get("email"):
+            pending_talent = talent_updates.get(talent_id)
+            if not pending_talent or not pending_talent["email"].strip():
+                errors.append(
+                    f"El talento {talents_by_id[talent_id]['name']} no tiene "
+                    "correo electrónico."
+                )
 
     if expert_update is not None:
         errors.extend(
             _validate_new_person(
                 expert_update,
                 "el experto",
-                require_email=False,
+                require_email=True,
                 require_signature=False,
             )
         )
     for talent_id, talent_update in talent_updates.items():
-        talent_roles = roles_by_talent[talent_id]
         errors.extend(
             _validate_new_person(
                 talent_update,
                 "el talento",
-                require_email="interlocutor" in talent_roles,
+                require_email=True,
                 require_signature=False,
             )
         )
