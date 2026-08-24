@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.env
+data/signatures/
+data/projects.json
+data/people.json
+output/
+1x/
+*.ai
