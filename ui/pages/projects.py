@@ -40,12 +40,10 @@ def _person_fields(
         "Lugar de expedición *",
         key=f"{prefix}_document_issue_place",
     )
-    email = ""
-    if require_email:
-        email = st.text_input(
-            "Correo electrónico *",
-            key=f"{prefix}_email",
-        )
+    email = st.text_input(
+        f"Correo electrónico{' *' if require_email else ''}",
+        key=f"{prefix}_email",
+    )
     signature = st.file_uploader(
         "Firma *",
         type=["png", "jpg", "jpeg"],
@@ -188,13 +186,11 @@ def _editable_person_fields(
         value=person.get("document_issue_place") or "",
         key=f"{prefix}_edit_issue_place",
     )
-    email = person.get("email") or ""
-    if require_email:
-        email = st.text_input(
-            "Correo electrónico *",
-            value=email,
-            key=f"{prefix}_edit_email",
-        )
+    email = st.text_input(
+        f"Correo electrónico{' *' if require_email else ''}",
+        value=person.get("email") or "",
+        key=f"{prefix}_edit_email",
+    )
     signature = st.file_uploader(
         "Reemplazar firma",
         type=["png", "jpg", "jpeg"],
