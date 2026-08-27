@@ -247,6 +247,21 @@ def render_create_project(
             placeholder="Selecciona una l\u00ednea tecnol\u00f3gica",
             index=None,
         )
+        trl_columns = st.columns(2)
+        with trl_columns[0]:
+            initial_trl = st.selectbox(
+                "TRL inicial *",
+                options=[f"TRL {level}" for level in range(1, 10)],
+                index=None,
+                placeholder="Selecciona el TRL inicial",
+            )
+        with trl_columns[1]:
+            target_trl = st.selectbox(
+                "TRL objetivo *",
+                options=[f"TRL {level}" for level in range(1, 10)],
+                index=None,
+                placeholder="Selecciona el TRL objetivo",
+            )
         description = st.text_area(
             "Descripción del proyecto *",
             height=240,
@@ -356,6 +371,10 @@ def render_create_project(
 
         if not technology_line:
             errors.append("Debes seleccionar la l\u00ednea tecnol\u00f3gica.")
+        if initial_trl is None:
+            errors.append("Debes seleccionar el TRL inicial.")
+        if target_trl is None:
+            errors.append("Debes seleccionar el TRL objetivo.")
         if company_assignment["mode"] == "existing":
             if company_assignment["id"] is None:
                 errors.append("Debes seleccionar una empresa existente.")
@@ -411,6 +430,8 @@ def render_create_project(
                     "start_date": start_date,
                     "end_date": end_date,
                     "technology_line": technology_line,
+                    "initial_trl": initial_trl,
+                    "target_trl": target_trl,
                 },
                 _serialize_assignment(expert_assignment),
                 {

@@ -104,7 +104,10 @@ def initialize_schema() -> None:
                 FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE()
                   AND TABLE_NAME = 'proyectos'
-                  AND COLUMN_NAME IN ('empresa_id', 'linea_tecnologica')
+                  AND COLUMN_NAME IN (
+                      'empresa_id', 'linea_tecnologica',
+                      'trl_inicial', 'trl_objetivo'
+                  )
                 """
             )
             columns = dict(cursor.fetchall())
@@ -119,6 +122,18 @@ def initialize_schema() -> None:
             if "linea_tecnologica" not in columns:
                 cursor.execute(
                     "ALTER TABLE proyectos ADD linea_tecnologica VARCHAR(120) NULL"
+                )
+            if "trl_inicial" not in columns:
+                cursor.execute(
+                    """ALTER TABLE proyectos ADD trl_inicial
+                    ENUM('TRL 1','TRL 2','TRL 3','TRL 4','TRL 5',
+                         'TRL 6','TRL 7','TRL 8','TRL 9') NULL"""
+                )
+            if "trl_objetivo" not in columns:
+                cursor.execute(
+                    """ALTER TABLE proyectos ADD trl_objetivo
+                    ENUM('TRL 1','TRL 2','TRL 3','TRL 4','TRL 5',
+                         'TRL 6','TRL 7','TRL 8','TRL 9') NULL"""
                 )
             cursor.execute(
                 """

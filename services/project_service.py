@@ -43,6 +43,8 @@ class ProjectService:
                         p.fecha_inicio AS start_date,
                         p.fecha_finalizacion AS end_date,
                         p.linea_tecnologica AS technology_line,
+                        p.trl_inicial AS initial_trl,
+                        p.trl_objetivo AS target_trl,
                         c.id AS company_id,
                         c.nit AS company_nit,
                         c.razon_social AS company_legal_name,
@@ -124,8 +126,10 @@ class ProjectService:
                         fecha_inicio,
                         fecha_finalizacion,
                         linea_tecnologica,
+                        trl_inicial,
+                        trl_objetivo,
                         empresa_id
-                    ) VALUES (%s, %s, %s, %s, %s, 'activo', %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, 'activo', %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         project_data["code"].strip(),
@@ -136,6 +140,8 @@ class ProjectService:
                         project_data.get("start_date"),
                         project_data.get("end_date"),
                         project_data["technology_line"],
+                        project_data["initial_trl"],
+                        project_data["target_trl"],
                         company["id"],
                     ),
                 )
@@ -173,6 +179,8 @@ class ProjectService:
             "start_date": project_data.get("start_date"),
             "end_date": project_data.get("end_date"),
             "technology_line": project_data["technology_line"],
+            "initial_trl": project_data["initial_trl"],
+            "target_trl": project_data["target_trl"],
             "company_id": company["id"],
             "company": company,
             "expert_id": expert["id"],
@@ -310,6 +318,8 @@ class ProjectService:
             "start_date": row["start_date"],
             "end_date": row["end_date"],
             "technology_line": row["technology_line"],
+            "initial_trl": row["initial_trl"],
+            "target_trl": row["target_trl"],
             "company_id": row["company_id"],
             "company": (
                 {
