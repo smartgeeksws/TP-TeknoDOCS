@@ -7,6 +7,7 @@ from typing import Any
 import mysql.connector
 import streamlit as st
 
+from services.company_service import CompanyService
 from services.database import DatabaseError, database_connection
 from services.person_service import PersonService
 
@@ -14,8 +15,13 @@ from services.person_service import PersonService
 class ProjectService:
     """Centraliza las operaciones de proyectos."""
 
-    def __init__(self, person_service: PersonService) -> None:
+    def __init__(
+        self,
+        person_service: PersonService,
+        company_service: CompanyService,
+    ) -> None:
         self.person_service = person_service
+        self.company_service = company_service
 
     def initialize_session(self) -> None:
         st.session_state.setdefault("active_project_id", None)
@@ -36,6 +42,11 @@ class ProjectService:
                         p.estado AS state,
                         p.fecha_inicio AS start_date,
                         p.fecha_finalizacion AS end_date,
+                        p.linea_tecnologica AS technology_line,
+                        c.id AS company_id,
+                        c.nit AS company_nit,
+                        c.nombre AS company_name,
+                        c.razon_social AS company_legal_name,
                         p.creado_en AS created_at,
                         p.actualizado_en AS updated_at,
                         e.id AS expert_id,
@@ -47,6 +58,7 @@ class ProjectService:
                         e.firma_ruta AS expert_signature_path
                     FROM proyectos p
                     LEFT JOIN expertos_tecnoparque e ON e.id = p.experto_id
+                    LEFT JOIN empresas c ON c.id = p.empresa_id
                     WHERE p.eliminado_en IS NULL
                     ORDER BY p.creado_en DESC
                     """
@@ -63,6 +75,7 @@ class ProjectService:
         project_data: dict[str, Any],
         expert_assignment: dict[str, Any],
         talent_assignments: dict[str, dict[str, Any]],
+        company_assignment: dict[str, Any],
     ) -> dict[str, Any]:
         if not talent_assignments:
             raise ValueError("Debes asociar al menos un talento al proyecto.")
@@ -77,6 +90,9 @@ class ProjectService:
                     cursor,
                     "expert",
                     expert_assignment,
+                )
+                company = self.company_service.resolve_company(
+                    cursor, company_assignment
                 )
                 talents = []
                 for role, assignment in talent_assignments.items():
@@ -107,8 +123,10 @@ class ProjectService:
                         experto_id,
                         estado,
                         fecha_inicio,
-                        fecha_finalizacion
-                    ) VALUES (%s, %s, %s, %s, %s, 'activo', %s, %s)
+                        fecha_finalizacion,
+                        linea_tecnologica,
+                        empresa_id
+                    ) VALUES (%s, %s, %s, %s, %s, 'activo', %s, %s, %s, %s)
                     """,
                     (
                         project_data["code"].strip(),
@@ -118,6 +136,8 @@ class ProjectService:
                         expert["id"],
                         project_data.get("start_date"),
                         project_data.get("end_date"),
+                        project_data["technology_line"],
+                        company["id"],
                     ),
                 )
                 project_id = cursor.lastrowid
@@ -153,6 +173,9 @@ class ProjectService:
             "state": "activo",
             "start_date": project_data.get("start_date"),
             "end_date": project_data.get("end_date"),
+            "technology_line": project_data["technology_line"],
+            "company_id": company["id"],
+            "company": company,
             "expert_id": expert["id"],
             "expert": expert,
             "talents": talents,
@@ -287,6 +310,18 @@ class ProjectService:
             "state": row["state"],
             "start_date": row["start_date"],
             "end_date": row["end_date"],
+            "technology_line": row["technology_line"],
+            "company_id": row["company_id"],
+            "company": (
+                {
+                    "id": row["company_id"],
+                    "nit": row["company_nit"],
+                    "name": row["company_name"],
+                    "legal_name": row["company_legal_name"],
+                }
+                if row.get("company_id") is not None
+                else None
+            ),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "expert_id": row["expert_id"],

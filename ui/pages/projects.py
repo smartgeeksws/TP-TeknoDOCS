@@ -7,7 +7,8 @@ from typing import Any
 
 import streamlit as st
 
-from config.settings import DOCUMENT_TYPES, TALENT_ROLES
+from config.settings import DOCUMENT_TYPES, TALENT_ROLES, TECHNOLOGY_LINES
+from services.company_service import CompanyService
 from services.database import DatabaseError
 from services.person_service import PersonService
 from services.project_service import ProjectService
@@ -227,6 +228,7 @@ def _serialize_person_update(data: dict[str, Any]) -> dict[str, Any]:
 def render_create_project(
     project_service: ProjectService,
     person_service: PersonService,
+    company_service: CompanyService,
 ) -> None:
     st.title("Crear proyecto")
     st.caption("Registra la información general y las personas vinculadas al proyecto.")
@@ -239,6 +241,12 @@ def render_create_project(
         with second:
             name = st.text_input("Nombre del proyecto *")
         city = st.text_input("Ciudad del proyecto o firma de documentos *")
+        technology_line = st.selectbox(
+            "L\u00ednea tecnol\u00f3gica *",
+            options=TECHNOLOGY_LINES,
+            placeholder="Selecciona una l\u00ednea tecnol\u00f3gica",
+            index=None,
+        )
         description = st.text_area(
             "Descripción del proyecto *",
             height=240,
@@ -249,6 +257,56 @@ def render_create_project(
             start_date = st.date_input("Fecha de inicio", value=None)
         with date_columns[1]:
             end_date = st.date_input("Fecha de finalización", value=None)
+
+    companies = company_service.list_companies()
+    with st.container(border=True):
+        st.subheader("2. Empresa asociada")
+        modes = ["Registrar nueva"]
+        if companies:
+            modes.insert(0, "Buscar existente")
+        company_mode = st.radio("C\u00f3mo asociar la empresa", modes, horizontal=True)
+        if company_mode == "Buscar existente":
+            company_search = st.text_input(
+                "Buscar por NIT, nombre o raz\u00f3n social",
+                placeholder="Escribe todo o parte del dato",
+            )
+            term = company_search.strip().casefold()
+            matches = [
+                company
+                for company in companies
+                if not term
+                or any(
+                    term in str(company.get(field) or "").casefold()
+                    for field in ("nit", "name", "legal_name")
+                )
+            ]
+            companies_by_id = {company["id"]: company for company in matches}
+            company_id = st.selectbox(
+                "Empresa *",
+                options=list(companies_by_id),
+                format_func=lambda current_id: (
+                    f"{companies_by_id[current_id]['nit']} | "
+                    f"{companies_by_id[current_id]['name']} | "
+                    f"{companies_by_id[current_id]['legal_name']}"
+                ),
+                index=None,
+                placeholder="Selecciona una empresa",
+            )
+            if company_search and not matches:
+                st.info("No se encontraron empresas. Puedes registrar una nueva.")
+            company_assignment = {"mode": "existing", "id": company_id}
+        else:
+            company_nit = st.text_input("NIT *")
+            company_name = st.text_input("Nombre de la empresa *")
+            company_legal_name = st.text_input("Raz\u00f3n social *")
+            company_assignment = {
+                "mode": "new",
+                "data": {
+                    "nit": company_nit,
+                    "name": company_name,
+                    "legal_name": company_legal_name,
+                },
+            }
 
     experts = person_service.list_people("expert")
     talents = person_service.list_people("talent")
@@ -299,6 +357,21 @@ def render_create_project(
         if not selected_roles:
             errors.append("Debes seleccionar al menos un talento.")
 
+        if not technology_line:
+            errors.append("Debes seleccionar la l\u00ednea tecnol\u00f3gica.")
+        if company_assignment["mode"] == "existing":
+            if company_assignment["id"] is None:
+                errors.append("Debes seleccionar una empresa existente.")
+        else:
+            company_labels = {
+                "nit": "NIT",
+                "name": "nombre de la empresa",
+                "legal_name": "raz\u00f3n social",
+            }
+            for field, label in company_labels.items():
+                if not company_assignment["data"][field].strip():
+                    errors.append(f"Falta el {label}.")
+
         if expert_assignment["mode"] == "new":
             errors.extend(
                 _validate_new_person(
@@ -341,12 +414,14 @@ def render_create_project(
                     "description": description,
                     "start_date": start_date,
                     "end_date": end_date,
+                    "technology_line": technology_line,
                 },
                 _serialize_assignment(expert_assignment),
                 {
                     role: _serialize_assignment(assignment)
                     for role, assignment in talent_assignments.items()
                 },
+                company_assignment,
             )
         except (DatabaseError, OSError, ValueError) as error:
             st.error(f"No fue posible crear el proyecto: {error}")

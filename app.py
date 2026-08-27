@@ -3,7 +3,8 @@
 import streamlit as st
 
 from config.settings import APP_ICON, APP_NAME, APP_SUBTITLE
-from services.database import DatabaseError
+from services.company_service import CompanyService
+from services.database import DatabaseError, initialize_schema
 from services.person_service import PersonService
 from services.project_service import ProjectService
 from modules.start.confidentiality import render_confidentiality_document
@@ -26,10 +27,12 @@ st.set_page_config(
 apply_global_styles()
 
 person_service = PersonService()
-project_service = ProjectService(person_service)
+company_service = CompanyService()
+project_service = ProjectService(person_service, company_service)
 project_service.initialize_session()
 
 try:
+    initialize_schema()
     page = render_sidebar(project_service)
     active_project = project_service.get_active_project()
     if active_project:
@@ -38,7 +41,7 @@ try:
     if page == "dashboard":
         render_dashboard(project_service)
     elif page == "create_project":
-        render_create_project(project_service, person_service)
+        render_create_project(project_service, person_service, company_service)
     elif page == "projects":
         render_projects(project_service)
     elif page == "edit_project":

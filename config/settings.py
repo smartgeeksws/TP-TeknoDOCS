@@ -31,6 +31,17 @@ TALENT_ROLES = {
     "interlocutor": "Interlocutor",
 }
 
+TECHNOLOGY_LINES = (
+    "L\u00ednea de Dise\u00f1o de Productos",
+    "L\u00ednea de Producci\u00f3n y Transformaci\u00f3n",
+    "L\u00ednea de Materiales y Biotecnolog\u00eda",
+    "L\u00ednea de TICs e Inteligencia Artificial",
+    "L\u00ednea de usuario, Comercializaci\u00f3n y Log\u00edstica",
+    "L\u00ednea SENA se transforma",
+    "L\u00ednea de sociedad, cultura y pedagog\u00eda",
+    "L\u00ednea de econom\u00eda popular y campesina",
+)
+
 PHASE_DOCUMENTS = {
     "inicio": {
         "confidencialidad_compromiso": "Acta de Confidencialidad y Compromiso",

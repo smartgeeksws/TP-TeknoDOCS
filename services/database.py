@@ -62,3 +62,90 @@ def database_connection() -> Iterator[MySQLConnection]:
     finally:
         if connection.is_connected():
             connection.close()
+
+
+def initialize_schema() -> None:
+    """Incorpora de forma idempotente empresas y datos nuevos de proyecto."""
+
+    try:
+        with database_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS empresas (
+                    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    nit VARCHAR(30) NOT NULL,
+                    nombre VARCHAR(180) NOT NULL,
+                    razon_social VARCHAR(220) NOT NULL,
+                    activo BOOLEAN NOT NULL DEFAULT TRUE,
+                    creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_empresa_nit UNIQUE (nit)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """
+            )
+            cursor.execute(
+                """
+                SELECT COLUMN_NAME
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'empresas'
+                  AND COLUMN_NAME = 'nombre'
+                """
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    "ALTER TABLE empresas ADD nombre VARCHAR(180) NULL AFTER nit"
+                )
+                cursor.execute(
+                    "UPDATE empresas SET nombre = razon_social WHERE nombre IS NULL"
+                )
+                cursor.execute(
+                    "ALTER TABLE empresas MODIFY nombre VARCHAR(180) NOT NULL"
+                )
+            cursor.execute(
+                """
+                SELECT COLUMN_NAME, COLUMN_TYPE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'proyectos'
+                  AND COLUMN_NAME IN ('empresa_id', 'linea_tecnologica')
+                """
+            )
+            columns = dict(cursor.fetchall())
+            if "empresa_id" not in columns:
+                cursor.execute(
+                    "ALTER TABLE proyectos ADD empresa_id BIGINT UNSIGNED NULL"
+                )
+            elif columns["empresa_id"].lower() != "bigint unsigned":
+                cursor.execute(
+                    "ALTER TABLE proyectos MODIFY empresa_id BIGINT UNSIGNED NULL"
+                )
+            if "linea_tecnologica" not in columns:
+                cursor.execute(
+                    "ALTER TABLE proyectos ADD linea_tecnologica VARCHAR(120) NULL"
+                )
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE CONSTRAINT_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'proyectos'
+                  AND CONSTRAINT_NAME = 'fk_proyecto_empresa'
+                """
+            )
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(
+                    """
+                    ALTER TABLE proyectos
+                    ADD CONSTRAINT fk_proyecto_empresa
+                    FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+                    """
+                )
+            connection.commit()
+            cursor.close()
+    except mysql.connector.Error as error:
+        raise DatabaseError(
+            f"No fue posible actualizar la estructura de la base de datos: {error}"
+        ) from error
