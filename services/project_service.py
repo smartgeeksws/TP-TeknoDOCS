@@ -59,7 +59,7 @@ class ProjectService:
                         e.firma_ruta AS expert_signature_path
                     FROM proyectos p
                     LEFT JOIN expertos_tecnoparque e ON e.id = p.experto_id
-                    LEFT JOIN empresas c ON c.id = p.empresa_id
+                    LEFT JOIN empresas c ON c.id = p.empresa_propietaria_id
                     WHERE p.eliminado_en IS NULL
                     ORDER BY p.creado_en DESC
                     """
@@ -128,7 +128,7 @@ class ProjectService:
                         linea_tecnologica,
                         trl_inicial,
                         trl_objetivo,
-                        empresa_id
+                        empresa_propietaria_id
                     ) VALUES (%s, %s, %s, %s, %s, 'activo', %s, %s, %s, %s, %s, %s)
                     """,
                     (

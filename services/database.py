@@ -105,19 +105,21 @@ def initialize_schema() -> None:
                 WHERE TABLE_SCHEMA = DATABASE()
                   AND TABLE_NAME = 'proyectos'
                   AND COLUMN_NAME IN (
-                      'empresa_id', 'linea_tecnologica',
+                      'empresa_propietaria_id', 'empresa_id', 'linea_tecnologica',
                       'trl_inicial', 'trl_objetivo'
                   )
                 """
             )
             columns = dict(cursor.fetchall())
-            if "empresa_id" not in columns:
+            if "empresa_propietaria_id" not in columns:
                 cursor.execute(
-                    "ALTER TABLE proyectos ADD empresa_id BIGINT UNSIGNED NULL"
+                    """ALTER TABLE proyectos
+                    ADD empresa_propietaria_id BIGINT UNSIGNED NULL"""
                 )
-            elif columns["empresa_id"].lower() != "bigint unsigned":
+            elif columns["empresa_propietaria_id"].lower() != "bigint unsigned":
                 cursor.execute(
-                    "ALTER TABLE proyectos MODIFY empresa_id BIGINT UNSIGNED NULL"
+                    """ALTER TABLE proyectos
+                    MODIFY empresa_propietaria_id BIGINT UNSIGNED NULL"""
                 )
             if "linea_tecnologica" not in columns:
                 cursor.execute(
@@ -135,21 +137,28 @@ def initialize_schema() -> None:
                     ENUM('TRL 1','TRL 2','TRL 3','TRL 4','TRL 5',
                          'TRL 6','TRL 7','TRL 8','TRL 9') NULL"""
                 )
+            if "empresa_id" in columns:
+                cursor.execute(
+                    """UPDATE proyectos
+                    SET empresa_propietaria_id = empresa_id
+                    WHERE empresa_propietaria_id IS NULL
+                      AND empresa_id IS NOT NULL"""
+                )
             cursor.execute(
                 """
                 SELECT COUNT(*)
                 FROM information_schema.TABLE_CONSTRAINTS
                 WHERE CONSTRAINT_SCHEMA = DATABASE()
                   AND TABLE_NAME = 'proyectos'
-                  AND CONSTRAINT_NAME = 'fk_proyecto_empresa'
+                  AND CONSTRAINT_NAME = 'fk_proyectos_empresa_propietaria'
                 """
             )
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
                     """
                     ALTER TABLE proyectos
-                    ADD CONSTRAINT fk_proyecto_empresa
-                    FOREIGN KEY (empresa_id) REFERENCES empresas(id)
+                    ADD CONSTRAINT fk_proyectos_empresa_propietaria
+                    FOREIGN KEY (empresa_propietaria_id) REFERENCES empresas(id)
                     """
                 )
             connection.commit()
