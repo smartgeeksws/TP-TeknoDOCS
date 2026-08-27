@@ -17,6 +17,43 @@ from services.project_service import ProjectService
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
+@st.dialog("Confirmar eliminaci\u00f3n del proyecto")
+def _delete_project_dialog(
+    project_service: ProjectService,
+    project: dict[str, Any],
+) -> None:
+    st.warning(
+        "Esta acci\u00f3n retirar\u00e1 el proyecto de la aplicaci\u00f3n. "
+        "Los datos quedar\u00e1n conservados en la base de datos para recuperaci\u00f3n."
+    )
+    st.write(f"**Proyecto:** {project['name']}")
+    st.write(f"**C\u00f3digo:** `{project['code']}`")
+    confirmation_code = st.text_input(
+        "Escribe exactamente el c\u00f3digo del proyecto para confirmar",
+        key=f"delete_confirmation_{project['id']}",
+    )
+    cancel, confirm = st.columns(2)
+    with cancel:
+        if st.button("Cancelar", use_container_width=True):
+            st.session_state.pop("project_pending_deletion", None)
+            st.rerun()
+    with confirm:
+        if st.button(
+            "Eliminar proyecto",
+            type="primary",
+            use_container_width=True,
+            disabled=confirmation_code != project["code"],
+        ):
+            try:
+                project_service.delete_project(project["id"], confirmation_code)
+            except (DatabaseError, ValueError) as error:
+                st.error(str(error))
+                return
+            st.session_state.pop("project_pending_deletion", None)
+            st.session_state.project_deleted_confirmation = project["name"]
+            st.rerun()
+
+
 def _person_fields(
     prefix: str,
     title: str,
@@ -455,6 +492,10 @@ def render_create_project(
 def render_projects(project_service: ProjectService) -> None:
     st.title("Mis proyectos")
     st.caption("Selecciona el proyecto sobre el que deseas trabajar.")
+    deleted_project = st.session_state.pop("project_deleted_confirmation", None)
+    if deleted_project:
+        st.toast(f"Proyecto eliminado: {deleted_project}")
+
     projects = project_service.list_projects()
 
     if not projects:
@@ -541,6 +582,21 @@ def render_projects(project_service: ProjectService) -> None:
                     project_service.set_active_project(project["id"])
                     st.session_state.current_page = "dashboard"
                     st.rerun()
+                if st.button(
+                    "Eliminar proyecto",
+                    key=f"delete_{project['id']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.project_pending_deletion = {
+                        "id": project["id"],
+                        "code": project["code"],
+                        "name": project["name"],
+                    }
+
+    pending_deletion = st.session_state.get("project_pending_deletion")
+    if pending_deletion:
+        _delete_project_dialog(project_service, pending_deletion)
+
 
 
 def render_edit_project(

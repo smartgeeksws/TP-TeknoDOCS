@@ -198,6 +198,46 @@ class ProjectService:
             None,
         )
 
+    def delete_project(self, project_id: int, confirmation_code: str) -> None:
+        """Marca un proyecto como eliminado tras validar su codigo exacto."""
+
+        try:
+            with database_connection() as connection:
+                cursor = connection.cursor(dictionary=True, buffered=True)
+                cursor.execute(
+                    """
+                    SELECT codigo AS code
+                    FROM proyectos
+                    WHERE id = %s AND eliminado_en IS NULL
+                    """,
+                    (project_id,),
+                )
+                project = cursor.fetchone()
+                if project is None:
+                    raise ValueError("El proyecto ya no esta disponible.")
+                if confirmation_code != project["code"]:
+                    raise ValueError("El codigo ingresado no coincide con el proyecto.")
+                cursor.execute(
+                    """
+                    UPDATE proyectos
+                    SET eliminado_en = CURRENT_TIMESTAMP,
+                        estado = 'archivado'
+                    WHERE id = %s AND eliminado_en IS NULL
+                    """,
+                    (project_id,),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError("No fue posible eliminar el proyecto.")
+                connection.commit()
+                cursor.close()
+        except mysql.connector.Error as error:
+            raise DatabaseError(
+                f"No fue posible eliminar el proyecto: {error}"
+            ) from error
+
+        if st.session_state.get("active_project_id") == project_id:
+            st.session_state.active_project_id = None
+
     def update_project(
         self,
         project_id: int,
