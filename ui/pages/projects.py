@@ -444,8 +444,11 @@ def render_create_project(
             st.error(f"No fue posible crear el proyecto: {error}")
             return
 
+        st.session_state.project_created_confirmation = {
+            "code": code.strip(),
+            "name": name.strip(),
+        }
         st.session_state.current_page = "dashboard"
-        st.success("Proyecto creado correctamente.")
         st.rerun()
 
 

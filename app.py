@@ -17,6 +17,18 @@ from ui.pages.projects import render_create_project, render_edit_project, render
 from ui.styles import apply_global_styles
 
 
+@st.dialog("Proyecto creado correctamente")
+def show_project_created_dialog(project: dict) -> None:
+    """Confirma la creaci?n despu?s de navegar al proyecto activo."""
+
+    st.success("El proyecto fue registrado y guardado en la base de datos.")
+    st.write(f"**C?digo:** {project['code']}")
+    st.write(f"**Proyecto:** {project['name']}")
+    if st.button("Continuar al dashboard", type="primary", use_container_width=True):
+        st.session_state.pop("project_created_confirmation", None)
+        st.rerun()
+
+
 st.set_page_config(
     page_title=APP_NAME,
     page_icon=APP_ICON,
@@ -37,6 +49,9 @@ try:
     active_project = project_service.get_active_project()
     if active_project:
         project_context(active_project)
+    confirmation = st.session_state.get("project_created_confirmation")
+    if confirmation:
+        show_project_created_dialog(confirmation)
 
     if page == "dashboard":
         render_dashboard(project_service)
