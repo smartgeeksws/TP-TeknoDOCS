@@ -267,7 +267,7 @@ def render_create_project(
         company_mode = st.radio("C\u00f3mo asociar la empresa", modes, horizontal=True)
         if company_mode == "Buscar existente":
             company_search = st.text_input(
-                "Buscar por NIT, nombre o raz\u00f3n social",
+                "Buscar por NIT o raz\u00f3n social",
                 placeholder="Escribe todo o parte del dato",
             )
             term = company_search.strip().casefold()
@@ -277,7 +277,7 @@ def render_create_project(
                 if not term
                 or any(
                     term in str(company.get(field) or "").casefold()
-                    for field in ("nit", "name", "legal_name")
+                    for field in ("nit", "legal_name")
                 )
             ]
             companies_by_id = {company["id"]: company for company in matches}
@@ -286,7 +286,6 @@ def render_create_project(
                 options=list(companies_by_id),
                 format_func=lambda current_id: (
                     f"{companies_by_id[current_id]['nit']} | "
-                    f"{companies_by_id[current_id]['name']} | "
                     f"{companies_by_id[current_id]['legal_name']}"
                 ),
                 index=None,
@@ -297,13 +296,11 @@ def render_create_project(
             company_assignment = {"mode": "existing", "id": company_id}
         else:
             company_nit = st.text_input("NIT *")
-            company_name = st.text_input("Nombre de la empresa *")
             company_legal_name = st.text_input("Raz\u00f3n social *")
             company_assignment = {
                 "mode": "new",
                 "data": {
                     "nit": company_nit,
-                    "name": company_name,
                     "legal_name": company_legal_name,
                 },
             }
@@ -365,7 +362,6 @@ def render_create_project(
         else:
             company_labels = {
                 "nit": "NIT",
-                "name": "nombre de la empresa",
                 "legal_name": "raz\u00f3n social",
             }
             for field, label in company_labels.items():

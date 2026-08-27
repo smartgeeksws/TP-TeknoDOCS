@@ -45,7 +45,6 @@ class ProjectService:
                         p.linea_tecnologica AS technology_line,
                         c.id AS company_id,
                         c.nit AS company_nit,
-                        c.nombre AS company_name,
                         c.razon_social AS company_legal_name,
                         p.creado_en AS created_at,
                         p.actualizado_en AS updated_at,
@@ -316,7 +315,6 @@ class ProjectService:
                 {
                     "id": row["company_id"],
                     "nit": row["company_nit"],
-                    "name": row["company_name"],
                     "legal_name": row["company_legal_name"],
                 }
                 if row.get("company_id") is not None

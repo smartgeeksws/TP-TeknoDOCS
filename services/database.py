@@ -75,7 +75,6 @@ def initialize_schema() -> None:
                 CREATE TABLE IF NOT EXISTS empresas (
                     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                     nit VARCHAR(30) NOT NULL,
-                    nombre VARCHAR(180) NOT NULL,
                     razon_social VARCHAR(220) NOT NULL,
                     activo BOOLEAN NOT NULL DEFAULT TRUE,
                     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -87,22 +86,17 @@ def initialize_schema() -> None:
             )
             cursor.execute(
                 """
-                SELECT COLUMN_NAME
+                SELECT IS_NULLABLE
                 FROM information_schema.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE()
                   AND TABLE_NAME = 'empresas'
                   AND COLUMN_NAME = 'nombre'
                 """
             )
-            if cursor.fetchone() is None:
+            legacy_name = cursor.fetchone()
+            if legacy_name is not None and legacy_name[0] == "NO":
                 cursor.execute(
-                    "ALTER TABLE empresas ADD nombre VARCHAR(180) NULL AFTER nit"
-                )
-                cursor.execute(
-                    "UPDATE empresas SET nombre = razon_social WHERE nombre IS NULL"
-                )
-                cursor.execute(
-                    "ALTER TABLE empresas MODIFY nombre VARCHAR(180) NOT NULL"
+                    "ALTER TABLE empresas MODIFY nombre VARCHAR(180) NULL"
                 )
             cursor.execute(
                 """

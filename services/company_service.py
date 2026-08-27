@@ -18,7 +18,7 @@ class CompanyService:
                 cursor = connection.cursor(dictionary=True, buffered=True)
                 cursor.execute(
                     """
-                    SELECT id, nit, nombre AS name, razon_social AS legal_name
+                    SELECT id, nit, razon_social AS legal_name
                     FROM empresas
                     WHERE activo = TRUE
                     ORDER BY razon_social, nombre
@@ -37,7 +37,7 @@ class CompanyService:
         if assignment["mode"] == "existing":
             cursor.execute(
                 """
-                SELECT id, nit, nombre AS name, razon_social AS legal_name
+                SELECT id, nit, razon_social AS legal_name
                 FROM empresas
                 WHERE id = %s AND activo = TRUE
                 """,
@@ -65,14 +65,13 @@ class CompanyService:
             )
         cursor.execute(
             """
-            INSERT INTO empresas (nit, nombre, razon_social)
-            VALUES (%s, %s, %s)
+            INSERT INTO empresas (nit, razon_social)
+            VALUES (%s, %s)
             """,
-            (nit, data["name"].strip(), data["legal_name"].strip()),
+            (nit, data["legal_name"].strip()),
         )
         return {
             "id": cursor.lastrowid,
             "nit": nit,
-            "name": data["name"].strip(),
             "legal_name": data["legal_name"].strip(),
         }
