@@ -111,6 +111,16 @@ class DiagnosticContentService:
     @classmethod
     def _schema(cls) -> dict[str, Any]:
         string = {"type": "string", "minLength": 1}
+        narrative = {
+            "type": "string",
+            "minLength": 1,
+            "description": "Texto técnico de 190 a 220 palabras; contar antes de responder.",
+        }
+        surveillance = {
+            "type": "string",
+            "minLength": 1,
+            "description": "Vigilancia tecnológica de 330 a 420 palabras; contar antes de responder.",
+        }
         source = {
             "type": "object",
             "properties": {
@@ -180,7 +190,8 @@ class DiagnosticContentService:
             "additionalProperties": False,
         }
         properties: dict[str, Any] = {
-            field: string for field in cls.NARRATIVE_FIELDS
+            field: (surveillance if field == "technology_surveillance" else narrative)
+            for field in cls.NARRATIVE_FIELDS
         }
         properties.update(
             {
@@ -209,7 +220,7 @@ class DiagnosticContentService:
         return f"""
 Actúa como investigador y formulador técnico de proyectos SENA. Investiga en la web antes de redactar. Usa exclusivamente fuentes primarias, científicas, gubernamentales, normativas, universitarias, patentes o documentación oficial verificable. Prohíbe Wikipedia, blogs, foros, agregadores y contenido SEO. Prioriza publicaciones entre 2022 y {document_date.year}; usa anteriores solo para normas vigentes o fundamentos imprescindibles. No inventes autores, títulos, años, DOI, URL, normas, productos ni patentes.
 
-Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Los campos narrativos deben respetar estrictamente sus extensiones: 160–250 palabras, excepto technology_surveillance con 280–500.
+Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Los límites absolutos validados por el sistema son 160–250 y 280–500, respectivamente; no te acerques a esos límites.
 
 Genera un objetivo general breve que comience con verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también en infinitivo y secuencia lógica. Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
 """.strip()
