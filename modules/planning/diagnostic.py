@@ -22,6 +22,21 @@ from services.project_service import ProjectService
 
 MODULE_VERSION = 1
 
+EDITABLE_SECTION_LABELS = {
+    "introduction": "Introducción",
+    "problem_statement": "Planteamiento del problema",
+    "problem_identified": "Problema identificado",
+    "problem_impact": "Impacto del problema",
+    "solution": "Descripción de la solución",
+    "state_of_art": "Estado del arte",
+    "technology_narrative": "Descripción de las tecnologías",
+    "technology_surveillance": "Vigilancia tecnológica y comercial",
+    "legal_study": "Estudio legal y normativo",
+    "viability": "Viabilidad del proyecto",
+    "expected_results": "Resultados esperados",
+    "conclusions": "Conclusiones",
+}
+
 
 def render_diagnostic(
     project_service: ProjectService,
@@ -41,11 +56,16 @@ def render_diagnostic(
     content_service = content_service or DiagnosticContentService()
     document_service = document_service or DiagnosticDocumentService()
     prefix = f"diagnostic_{project['id']}_v{MODULE_VERSION}"
-    try:
-        saved = repository.load(project["id"])
-    except DatabaseError as error:
-        st.error(str(error))
-        return
+    saved_key = f"{prefix}_saved"
+    if saved_key in st.session_state:
+        saved = st.session_state[saved_key]
+    else:
+        try:
+            saved = repository.load(project["id"])
+        except DatabaseError as error:
+            st.error(str(error))
+            return
+        st.session_state[saved_key] = saved
     _initialize_state(prefix, saved)
 
     with st.container(border=True):
@@ -120,6 +140,8 @@ def render_diagnostic(
         try:
             _validate_form(form_data)
             repository.save_form(project["id"], form_data)
+            cached_saved = st.session_state.get(saved_key) or {}
+            st.session_state[saved_key] = {**cached_saved, "form": form_data}
         except (ValueError, DatabaseError) as error:
             st.error(str(error))
         else:
@@ -150,10 +172,30 @@ def render_diagnostic(
             st.session_state[f"{prefix}_word"] = word_data
             st.session_state[f"{prefix}_filename"] = filename
             st.session_state[f"{prefix}_sources"] = content["sources"]
+            st.session_state[f"{prefix}_content"] = content
+            st.session_state[saved_key] = {
+                "form": form_data,
+                "content": content,
+                "sources": content["sources"],
+            }
+            _set_editor_state(prefix, content, force=True)
         except (ValueError, DatabaseError, DiagnosticContentError, DiagnosticDocumentError, OSError) as error:
             st.error(f"No fue posible generar el diagnóstico: {error}")
 
     _restore_saved_word(prefix, project, saved, document_service)
+    content = st.session_state.get(f"{prefix}_content")
+    if content:
+        _render_content_editor(
+            prefix=prefix,
+            saved_key=saved_key,
+            project=project,
+            form_data=form_data,
+            content=content,
+            repository=repository,
+            content_service=content_service,
+            document_service=document_service,
+        )
+
     word_data = st.session_state.get(f"{prefix}_word")
     filename = st.session_state.get(f"{prefix}_filename")
     if word_data and filename:
@@ -205,9 +247,140 @@ def _initialize_state(prefix: str, saved: dict[str, Any] | None) -> None:
         f"{prefix}_glossary_choice": "Sí" if form.get("glossary_requested") else "No",
         f"{prefix}_glossary_terms": form.get("glossary_terms", ""),
         f"{prefix}_sources": (saved or {}).get("sources", []),
+        f"{prefix}_content": (saved or {}).get("content"),
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+
+
+def _set_editor_state(
+    prefix: str,
+    content: dict[str, Any],
+    *,
+    force: bool = False,
+) -> None:
+    values = {
+        **{field: str(content.get(field, "")) for field in EDITABLE_SECTION_LABELS},
+        "general_objective": str(content.get("general_objective", "")),
+    }
+    for field, value in values.items():
+        key = f"{prefix}_edit_{field}"
+        if force or key not in st.session_state:
+            st.session_state[key] = value
+    for index, objective in enumerate(content.get("specific_objectives", [])):
+        key = f"{prefix}_edit_specific_objective_{index}"
+        if force or key not in st.session_state:
+            st.session_state[key] = str(objective)
+
+
+def _render_content_editor(
+    *,
+    prefix: str,
+    saved_key: str,
+    project: dict[str, Any],
+    form_data: dict[str, Any],
+    content: dict[str, Any],
+    repository: DiagnosticRepository,
+    content_service: DiagnosticContentService,
+    document_service: DiagnosticDocumentService,
+) -> None:
+    _set_editor_state(prefix, content)
+    with st.expander(
+        "Revisar y editar contenido generado",
+        expanded=True,
+        icon=":material/edit_document:",
+    ):
+        st.caption(
+            "Estos ajustes se procesan localmente: no realizan una nueva consulta a "
+            "OpenAI. El Word se reconstruye con el texto revisado."
+        )
+        with st.form(f"{prefix}_content_editor"):
+            edited_sections = {
+                field: st.text_area(
+                    f"{label} "
+                    + (
+                        "(280–500 palabras)"
+                        if field == "technology_surveillance"
+                        else "(160–250 palabras)"
+                    ),
+                    key=f"{prefix}_edit_{field}",
+                    height=240 if field == "technology_surveillance" else 170,
+                )
+                for field, label in EDITABLE_SECTION_LABELS.items()
+            }
+            general_objective = st.text_area(
+                "Objetivo general",
+                key=f"{prefix}_edit_general_objective",
+                height=90,
+            )
+            specific_objectives = [
+                st.text_area(
+                    f"Objetivo específico {index + 1}",
+                    key=f"{prefix}_edit_specific_objective_{index}",
+                    height=80,
+                )
+                for index, _objective in enumerate(
+                    content.get("specific_objectives", [])
+                )
+            ]
+            apply_edits = st.form_submit_button(
+                "Guardar ajustes y regenerar Word",
+                type="primary",
+                icon=":material/save:",
+                width="stretch",
+            )
+
+        if not apply_edits:
+            return
+
+        updated_content = dict(content)
+        updated_content.update(
+            {field: value.strip() for field, value in edited_sections.items()}
+        )
+        updated_content["general_objective"] = general_objective.strip()
+        updated_content["specific_objectives"] = [
+            objective.strip()
+            for objective in specific_objectives
+            if objective.strip()
+        ]
+        try:
+            content_service.validate_content(
+                updated_content,
+                date.fromisoformat(form_data["document_date"]),
+                form_data,
+            )
+            word_data, filename = document_service.generate(
+                project, form_data, updated_content
+            )
+            repository.save_generation(
+                project["id"],
+                form_data,
+                updated_content,
+                updated_content["sources"],
+            )
+        except (
+            ValueError,
+            DatabaseError,
+            DiagnosticContentError,
+            DiagnosticDocumentError,
+            OSError,
+        ) as error:
+            st.error(f"No fue posible guardar los ajustes: {error}")
+            return
+
+        st.session_state[f"{prefix}_content"] = updated_content
+        st.session_state[f"{prefix}_word"] = word_data
+        st.session_state[f"{prefix}_filename"] = filename
+        st.session_state[f"{prefix}_sources"] = updated_content["sources"]
+        st.session_state[saved_key] = {
+            "form": form_data,
+            "content": updated_content,
+            "sources": updated_content["sources"],
+        }
+        st.toast(
+            "Ajustes guardados y documento Word actualizado.",
+            icon=":material/check_circle:",
+        )
 
 
 def _restore_saved_word(

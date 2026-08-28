@@ -366,6 +366,16 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
             "team_roles": [item.get("role_name") or item.get("role") for item in project.get("talents", [])],
         }
 
+    def validate_content(
+        self,
+        content: dict[str, Any],
+        document_date: date,
+        form_data: dict[str, Any],
+    ) -> None:
+        """Valida contenido generado o ajustado manualmente antes de persistirlo."""
+
+        self._validate_content(content, document_date, form_data)
+
     def _validate_content(
         self,
         content: dict[str, Any],
@@ -454,20 +464,7 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
             and not any(domain in host for domain in self.BANNED_DOMAINS)
             and isinstance(year, int)
             and 1900 <= year <= document_date.year
-            and (
-                year >= 2022
-                or any(
-                    keyword in (
-                        str(source.get("source_type", ""))
-                        + " "
-                        + str(source.get("title", ""))
-                    ).casefold()
-                    for keyword in (
-                        "norma", "ley", "legislación", "estándar",
-                        "standard", "metodología", "libro",
-                    )
-                )
-            )            and bool(str(source.get("author", "")).strip())
+            and bool(str(source.get("author", "")).strip())
             and bool(str(source.get("title", "")).strip())
         )
 
