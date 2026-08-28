@@ -26,7 +26,7 @@ def show_project_created_dialog(project: dict) -> None:
     st.success("El proyecto fue registrado y guardado en la base de datos.")
     st.write(f"**C?digo:** {project['code']}")
     st.write(f"**Proyecto:** {project['name']}")
-    if st.button("Continuar al dashboard", type="primary", use_container_width=True):
+    if st.button("Continuar al dashboard", type="primary", width="stretch"):
         st.session_state.pop("project_created_confirmation", None)
         st.rerun()
 

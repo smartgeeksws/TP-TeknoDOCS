@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from config.settings import PHASES
+from config.settings import PHASE_DOCUMENTS, PHASES
 from services.document_generation.confidentiality_service import ConfidentialityService
 from services.document_generation.infrastructure_service import InfrastructureService
 from services.project_service import ProjectService
@@ -58,12 +58,36 @@ def render_dashboard(project_service: ProjectService) -> None:
         icon = "✅" if document_state == "Generado" else "○"
         st.write(f"{icon} **{document_name}:** {document_state}")
 
-    st.subheader("Estado por fase")
+    st.subheader("Fases y documentos")
+    st.caption("Selecciona una fase o abre directamente el documento que deseas generar.")
     phase_columns = st.columns(2)
-    for index, phase_name in enumerate(PHASES.values()):
+    for index, (phase_id, phase_name) in enumerate(PHASES.items()):
         with phase_columns[index % 2]:
-            st.markdown(
-                f'<div class="tp-card"><h4>{phase_name}</h4>'
-                '<p>Próximamente se agregarán los documentos de esta fase.</p></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(key=f"phase-card-{phase_id}"):
+                st.subheader(phase_name)
+                documents = PHASE_DOCUMENTS.get(phase_id, {})
+                st.caption(
+                    f"{len(documents)} documento(s) disponible(s)"
+                    if documents
+                    else "Documentos próximamente"
+                )
+                if st.button(
+                    "Abrir fase",
+                    key=f"dashboard-phase-{phase_id}",
+                    icon=":material/arrow_forward:",
+                    width="stretch",
+                ):
+                    st.session_state.current_page = f"phase:{phase_id}"
+                    st.rerun()
+                for document_id, document_name in documents.items():
+                    if st.button(
+                        document_name,
+                        key=f"dashboard-document-{phase_id}-{document_id}",
+                        icon=":material/description:",
+                        type="tertiary",
+                        width="stretch",
+                    ):
+                        st.session_state.current_page = (
+                            f"document:{phase_id}:{document_id}"
+                        )
+                        st.rerun()

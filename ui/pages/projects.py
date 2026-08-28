@@ -34,14 +34,14 @@ def _delete_project_dialog(
     )
     cancel, confirm = st.columns(2)
     with cancel:
-        if st.button("Cancelar", use_container_width=True):
+        if st.button("Cancelar", width="stretch"):
             st.session_state.pop("project_pending_deletion", None)
             st.rerun()
     with confirm:
         if st.button(
             "Eliminar proyecto",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=confirmation_code != project["code"],
         ):
             try:
@@ -390,7 +390,7 @@ def render_create_project(
                 require_email=True,
             )
 
-    if st.button("Crear proyecto", type="primary", use_container_width=True):
+    if st.button("Crear proyecto", type="primary", width="stretch"):
         errors = []
         project_fields = {
             "código del proyecto": code,
@@ -553,11 +553,24 @@ def render_projects(project_service: ProjectService) -> None:
         return
 
     for project in filtered_projects:
-        with st.container(border=True):
-            details, action = st.columns([4, 1])
+        project_id = project["id"]
+        is_active = project_id == st.session_state.get("active_project_id")
+        with st.container(key=f"project-card-{project_id}"):
+            details, actions = st.columns([4, 1.25], vertical_alignment="center")
             with details:
                 st.subheader(project["name"])
-                st.caption(project.get("code") or "Sin código")
+                with st.container(horizontal=True, gap="small"):
+                    st.badge(
+                        project.get("code") or "Sin código",
+                        icon=":material/tag:",
+                        color="green",
+                    )
+                    if is_active:
+                        st.badge(
+                            "Proyecto activo",
+                            icon=":material/check_circle:",
+                            color="blue",
+                        )
                 st.write(f"**Ciudad:** {project.get('city') or 'Sin ciudad'}")
                 expert = project.get("expert") or {}
                 st.write(
@@ -569,30 +582,42 @@ def render_projects(project_service: ProjectService) -> None:
                     for talent in project.get("talents", [])
                 ]
                 st.write(
-                    f"**Talentos:** {', '.join(talent_names) if talent_names else 'Sin talentos'}"
+                    f"**Talentos:** "
+                    f"{', '.join(talent_names) if talent_names else 'Sin talentos'}"
                 )
-            with action:
-                is_active = project["id"] == st.session_state.get("active_project_id")
-                st.write("Proyecto activo" if is_active else "")
+            with actions:
                 if st.button(
-                    "Abrir proyecto",
-                    key=f"open_{project['id']}",
+                    "Proyecto activo" if is_active else "Seleccionar proyecto",
+                    key=f"select-project-{project_id}",
                     disabled=is_active,
+                    icon=":material/folder_open:",
+                    type="primary",
+                    width="stretch",
                 ):
-                    project_service.set_active_project(project["id"])
+                    project_service.set_active_project(project_id)
                     st.session_state.current_page = "dashboard"
                     st.rerun()
                 if st.button(
-                    "Eliminar proyecto",
-                    key=f"delete_{project['id']}",
-                    use_container_width=True,
+                    "Editar proyecto",
+                    key=f"edit-project-{project_id}",
+                    icon=":material/edit:",
+                    width="stretch",
+                ):
+                    project_service.set_active_project(project_id)
+                    st.session_state.current_page = "edit_project"
+                    st.rerun()
+                if st.button(
+                    "Borrar proyecto",
+                    key=f"delete-project-{project_id}",
+                    icon=":material/delete:",
+                    type="tertiary",
+                    width="stretch",
                 ):
                     st.session_state.project_pending_deletion = {
-                        "id": project["id"],
+                        "id": project_id,
                         "code": project["code"],
                         "name": project["name"],
                     }
-
     pending_deletion = st.session_state.get("project_pending_deletion")
     if pending_deletion:
         _delete_project_dialog(project_service, pending_deletion)
@@ -768,10 +793,10 @@ def render_edit_project(
         save = st.button(
             "Guardar cambios",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
     with actions[1]:
-        if st.button("Cancelar", use_container_width=True):
+        if st.button("Cancelar", width="stretch"):
             st.session_state.current_page = "dashboard"
             st.rerun()
 
