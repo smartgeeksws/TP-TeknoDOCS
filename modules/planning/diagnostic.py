@@ -201,9 +201,11 @@ def render_diagnostic(
     if word_data and filename:
         st.success("Documento Word listo. Puedes editar el formulario y regenerarlo.")
         st.warning(
-            "Antes de publicar o entregar el documento, verifica manualmente la "
-            "existencia, vigencia y correspondencia de todas las fuentes y enlaces. "
-            "Este aviso se muestra solo en la aplicación y no se incluye en el Word.",
+            "Antes de publicar o entregar el documento, revisa manualmente la "
+            "redacción, extensión, coherencia, objetivos, datos técnicos, citas, "
+            "referencias y la existencia y vigencia de todas las fuentes. La "
+            "aplicación no bloquea la generación por estos criterios. Este aviso "
+            "se muestra solo en la aplicación y no se incluye en el Word.",
             icon=":material/fact_check:",
         )
         st.download_button(
@@ -291,8 +293,8 @@ def _render_content_editor(
         icon=":material/edit_document:",
     ):
         st.caption(
-            "Estos ajustes se procesan localmente: no realizan una nueva consulta a "
-            "OpenAI. El Word se reconstruye con el texto revisado."
+            "Estos ajustes se procesan localmente y no realizan una nueva consulta a "
+            "OpenAI. Revisa cuidadosamente el contenido antes de reconstruir el Word."
         )
         with st.form(f"{prefix}_content_editor"):
             edited_sections = {

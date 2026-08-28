@@ -6,7 +6,6 @@ import json
 import re
 from datetime import date
 from typing import Any, Callable
-from urllib.parse import urlparse
 
 from services.project_content_service import ProjectContentService
 
@@ -19,8 +18,6 @@ ProgressCallback = Callable[[str], None]
 
 
 class DiagnosticContentService:
-    MAX_NARRATIVE_REPAIR_ATTEMPTS = 2
-
     NARRATIVE_FIELDS = {
         "introduction": (160, 250),
         "problem_statement": (160, 250),
@@ -35,15 +32,6 @@ class DiagnosticContentService:
         "conclusions": (160, 250),
         "technology_surveillance": (280, 500),
     }
-    BANNED_DOMAINS = (
-        "wikipedia.org",
-        "wikihow.com",
-        "medium.com",
-        "blogspot.com",
-        "wordpress.com",
-        "reddit.com",
-        "quora.com",
-    )
 
     def generate(
         self,
@@ -105,197 +93,9 @@ class DiagnosticContentService:
                 f"No fue posible investigar y generar el diagnóstico: {error}"
             ) from error
 
-        repair_attempts = 0
-        invalid_fields = self._invalid_narrative_fields(content)
-        while invalid_fields:
-            if repair_attempts >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
-                details = "; ".join(invalid_fields.values())
-                raise DiagnosticContentError(
-                    "La IA no logró ajustar las secciones narrativas después de "
-                    f"{self.MAX_NARRATIVE_REPAIR_ATTEMPTS} intentos: {details}"
-                )
-            repair_attempts += 1
-            self._notify(
-                progress,
-                "Ajustando únicamente las secciones que no cumplen "
-                f"({repair_attempts}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
-            )
-            repaired = self._repair_narrative_fields(
-                client=client,
-                model=model,
-                content=content,
-                invalid_fields=invalid_fields,
-                openai_error=OpenAIError,
-            )
-            content.update(repaired)
-            invalid_fields = self._invalid_narrative_fields(content)
-
         self._normalize_objectives(content)
-        invalid_objectives = self._invalid_objectives(content)
-        while invalid_objectives:
-            if repair_attempts >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
-                raise DiagnosticContentError(
-                    "La IA no logró formular todos los objetivos con verbo en infinitivo."
-                )
-            repair_attempts += 1
-            self._notify(
-                progress,
-                "Ajustando los objetivos que no cumplen "
-                f"({repair_attempts}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
-            )
-            content.update(
-                self._repair_objectives(
-                    client=client,
-                    model=model,
-                    content=content,
-                    openai_error=OpenAIError,
-                )
-            )
-            self._normalize_objectives(content)
-            invalid_objectives = self._invalid_objectives(content)
-
-        self._notify(progress, "Validando fuentes, citas y referencias...")
-        self._validate_content(content, document_date, form_data)
+        self._notify(progress, "Preparando contenido para revisión manual...")
         return content
-
-    def _repair_narrative_fields(
-        self,
-        *,
-        client: Any,
-        model: str,
-        content: dict[str, Any],
-        invalid_fields: dict[str, str],
-        openai_error: type[Exception],
-    ) -> dict[str, str]:
-        """Reescribe solo narrativas inválidas y conserva la investigación validable."""
-        properties = {
-            field: {
-                "type": "string",
-                "minLength": 1,
-                "description": (
-                    "Texto de 330 a 420 palabras."
-                    if field == "technology_surveillance"
-                    else "Texto de 190 a 220 palabras."
-                ),
-            }
-            for field in invalid_fields
-        }
-        context_sections = {
-            field: content.get(field, "")
-            for field in self.NARRATIVE_FIELDS
-            if field not in invalid_fields
-        }
-        request = {
-            "model": model,
-            "instructions": self._narrative_repair_instructions(),
-            "input": json.dumps(
-                {
-                    "secciones_a_corregir": {
-                        field: {
-                            "motivo": reason,
-                            "texto_actual": content.get(field, ""),
-                            "rango": (
-                                "330-420 palabras"
-                                if field == "technology_surveillance"
-                                else "190-220 palabras"
-                            ),
-                        }
-                        for field, reason in invalid_fields.items()
-                    },
-                    "otras_secciones_para_evitar_repeticiones": context_sections,
-                    "referencias_disponibles": content.get("references", []),
-                },
-                ensure_ascii=False,
-            ),
-            "max_output_tokens": 12000,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "secciones_diagnostico_corregidas",
-                    "schema": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": list(properties),
-                        "additionalProperties": False,
-                    },
-                    "strict": True,
-                }
-            },
-            "store": False,
-        }
-        try:
-            response = client.responses.create(**request)
-            return json.loads(response.output_text)
-        except (openai_error, json.JSONDecodeError, TypeError, ValueError) as error:
-            raise DiagnosticContentError(
-                f"No fue posible ajustar las secciones narrativas: {error}"
-            ) from error
-
-    def _repair_objectives(
-        self,
-        *,
-        client: Any,
-        model: str,
-        content: dict[str, Any],
-        openai_error: type[Exception],
-    ) -> dict[str, Any]:
-        request = {
-            "model": model,
-            "instructions": (
-                "Reformula los objetivos de un proyecto técnico SENA. Cada objetivo "
-                "debe comenzar directamente con un único verbo en infinitivo terminado "
-                "en -ar, -er o -ir, sin numeración, viñetas, títulos ni prefijos como "
-                "'Objetivo general'. Conserva el sentido técnico, usa entre 3 y 5 "
-                "objetivos específicos medibles y devuelve únicamente el JSON exigido."
-            ),
-            "input": json.dumps(
-                {
-                    "objetivo_general_actual": content.get("general_objective", ""),
-                    "objetivos_especificos_actuales": content.get(
-                        "specific_objectives", []
-                    ),
-                    "problema": content.get("problem_identified", ""),
-                    "solucion": content.get("solution", ""),
-                },
-                ensure_ascii=False,
-            ),
-            "max_output_tokens": 2000,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "objetivos_corregidos",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "general_objective": {
-                                "type": "string",
-                                "minLength": 1,
-                            },
-                            "specific_objectives": {
-                                "type": "array",
-                                "items": {"type": "string", "minLength": 1},
-                                "minItems": 3,
-                                "maxItems": 5,
-                            },
-                        },
-                        "required": [
-                            "general_objective",
-                            "specific_objectives",
-                        ],
-                        "additionalProperties": False,
-                    },
-                    "strict": True,
-                }
-            },
-            "store": False,
-        }
-        try:
-            response = client.responses.create(**request)
-            return json.loads(response.output_text)
-        except (openai_error, json.JSONDecodeError, TypeError, ValueError) as error:
-            raise DiagnosticContentError(
-                f"No fue posible ajustar los objetivos: {error}"
-            ) from error
 
     @staticmethod
     def _normalize_objective(value: Any) -> str:
@@ -326,26 +126,6 @@ class DiagnosticContentService:
             cls._normalize_objective(objective)
             for objective in content.get("specific_objectives", [])
         ]
-
-    @staticmethod
-    def _starts_with_infinitive(value: Any) -> bool:
-        words = str(value or "").strip().split()
-        if not words:
-            return False
-        first_word = re.sub(
-            r"^[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+|[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$",
-            "",
-            words[0],
-        )
-        return first_word.casefold().endswith(("ar", "er", "ir"))
-
-    @classmethod
-    def _invalid_objectives(cls, content: dict[str, Any]) -> list[str]:
-        values = [
-            content.get("general_objective", ""),
-            *content.get("specific_objectives", []),
-        ]
-        return [str(value) for value in values if not cls._starts_with_infinitive(value)]
 
     @classmethod
     def _schema(cls) -> dict[str, Any]:
@@ -459,39 +239,10 @@ class DiagnosticContentService:
         return f"""
 Actúa como investigador y formulador técnico de proyectos SENA. Investiga en la web antes de redactar. Usa exclusivamente fuentes primarias, científicas, gubernamentales, normativas, universitarias, patentes o documentación oficial verificable. Prohíbe Wikipedia, blogs, foros, agregadores y contenido SEO. Prioriza publicaciones entre 2022 y {document_date.year}; usa anteriores solo para normas vigentes o fundamentos imprescindibles. No inventes autores, títulos, años, DOI, URL, normas, productos ni patentes.
 
-Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Los límites absolutos validados por el sistema son 160–250 y 280–500, respectivamente; no te acerques a esos límites.
+Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Como guía de redacción, procura mantener rangos de 160–250 y 280–500 palabras, respectivamente; el usuario realizará la revisión final.
 
 Cada sección debe desarrollar un propósito diferente y aportar información nueva. No repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre secciones; tampoco uses referencias como «ver sección anterior», «como se indicó previamente» o equivalentes. Genera un objetivo general breve que comience directamente con un verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también iniciados directamente en infinitivo y en secuencia lógica. No antepongas numeraciones, viñetas ni etiquetas como «Objetivo general» u «Objetivo específico». Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
 """.strip()
-
-    @staticmethod
-    def _narrative_repair_instructions() -> str:
-        return """
-Actúa como editor técnico de proyectos SENA. Reescribe exclusivamente los campos solicitados y devuelve únicamente el JSON exigido. Cuenta las palabras de cada campo antes de responder y respeta el rango indicado. El texto debe ser sustantivo, autónomo y desarrollado: se prohíben resúmenes mínimos, marcadores pendientes y referencias como «ver sección anterior» o «como se indicó previamente».
-
-Compara cada texto con las demás secciones proporcionadas. Cada apartado debe cumplir un propósito diferente, aportar información nueva y evitar repetir párrafos, argumentos, antecedentes, citas o conclusiones ya usados. Conserva la coherencia técnica y utiliza solamente citas presentes en las referencias disponibles; no inventes fuentes ni copies literalmente el texto original.
-""".strip()
-
-    @classmethod
-    def _invalid_narrative_fields(cls, content: dict[str, Any]) -> dict[str, str]:
-        invalid: dict[str, str] = {}
-        forbidden_references = (
-            "ver sección", "sección anterior", "indicado previamente",
-            "mencionado anteriormente", "descrito anteriormente",
-        )
-        for field, (minimum, maximum) in cls.NARRATIVE_FIELDS.items():
-            value = str(content.get(field, "")).strip()
-            count = len(value.split())
-            if count < minimum or count > maximum:
-                invalid[field] = (
-                    f"{field} tiene {count} palabras; debe tener entre "
-                    f"{minimum} y {maximum}"
-                )
-                continue
-            normalized = value.casefold()
-            if any(reference in normalized for reference in forbidden_references):
-                invalid[field] = f"{field} remite a otra sección en lugar de desarrollarse"
-        return invalid
 
     @staticmethod
     def _safe_context(project: dict[str, Any]) -> dict[str, Any]:
@@ -514,94 +265,9 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
         document_date: date,
         form_data: dict[str, Any],
     ) -> None:
-        """Valida contenido generado o ajustado manualmente antes de persistirlo."""
+        """Normaliza el contenido editado sin bloquear la revisión humana."""
 
-        self._validate_content(content, document_date, form_data)
-
-    def _validate_content(
-        self,
-        content: dict[str, Any],
-        document_date: date,
-        form_data: dict[str, Any],
-    ) -> None:
-        for field, (minimum, maximum) in self.NARRATIVE_FIELDS.items():
-            count = len(str(content.get(field, "")).split())
-            if count < minimum or count > maximum:
-                raise DiagnosticContentError(
-                    f"La sección {field} tiene {count} palabras; debe tener entre {minimum} y {maximum}. Regenera el contenido."
-                )
-        banned_phrases = (
-            "en la actualidad", "hoy en día", "es importante destacar",
-            "cabe resaltar",
-        )
-        for field in self.NARRATIVE_FIELDS:
-            normalized = str(content[field]).casefold()
-            if any(phrase in normalized for phrase in banned_phrases):
-                raise DiagnosticContentError(
-                    f"La sección {field} contiene una frase genérica no permitida."
-                )
         self._normalize_objectives(content)
-        invalid_objectives = self._invalid_objectives(content)
-        if invalid_objectives:
-            raise DiagnosticContentError(
-                "Todos los objetivos deben comenzar con un verbo en infinitivo."
-            )
-        objectives = content.get("specific_objectives", [])
-        if not 3 <= len(objectives) <= 5:
-            raise DiagnosticContentError("Se requieren entre 3 y 5 objetivos específicos.")
-        if bool(form_data.get("glossary_requested")) != bool(content.get("glossary")):
-            raise DiagnosticContentError("El glosario generado no coincide con la selección del usuario.")
-        sources = content.get("sources", [])
-        if not sources:
-            raise DiagnosticContentError("No se encontraron fuentes verificables para el documento.")
-        valid_sources = [source for source in sources if self._valid_source_metadata(source, document_date)]
-        if len(valid_sources) != len(sources):
-            raise DiagnosticContentError("Una o más fuentes no cumplen los criterios de autor, fecha o URL.")
-
-        references = {
-            " ".join(str(reference).split()).casefold()
-            for reference in content.get("references", [])
-        }
-        missing_references = [
-            source["title"]
-            for source in sources
-            if " ".join(str(source.get("apa_reference", "")).split()).casefold()
-            not in references
-        ]
-        if missing_references:
-            raise DiagnosticContentError(
-                "Hay fuentes utilizadas que no aparecen en referencias bibliográficas: "
-                + ", ".join(missing_references)
-            )
-        for source in sources:
-            try:
-                consulted = date.fromisoformat(str(source.get("consulted_on", "")))
-            except ValueError as error:
-                raise DiagnosticContentError(
-                    f"La fuente {source.get('title')} no tiene fecha de consulta válida."
-                ) from error
-            if consulted != document_date:
-                raise DiagnosticContentError(
-                    "La fecha de consulta de todas las fuentes debe coincidir con la fecha de elaboración."
-                )
-        serialized = json.dumps(content, ensure_ascii=False).casefold()
-        if "s.f." in serialized or "sin fecha" in serialized or "wikipedia" in serialized:
-            raise DiagnosticContentError("El contenido contiene una fuente o fecha no permitida.")
-
-    def _valid_source_metadata(self, source: dict[str, Any], document_date: date) -> bool:
-        parsed = urlparse(str(source.get("url", "")))
-        host = parsed.netloc.casefold()
-        year = source.get("year")
-        return (
-            parsed.scheme in {"http", "https"}
-            and bool(host)
-            and not any(domain in host for domain in self.BANNED_DOMAINS)
-            and isinstance(year, int)
-            and 1900 <= year <= document_date.year
-            and bool(str(source.get("author", "")).strip())
-            and bool(str(source.get("title", "")).strip())
-        )
-
 
     @staticmethod
     def _validate_input(project: dict[str, Any], form_data: dict[str, Any]) -> None:
