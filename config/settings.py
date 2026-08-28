@@ -12,6 +12,7 @@ DATA_DIR = ROOT_DIR / "data"
 OUTPUT_DIR = ROOT_DIR / "output"
 SIGNATURES_DIR = DATA_DIR / "signatures"
 LOGO_PATH = RESOURCES_DIR / "logosm.png"
+SENA_LOGO_PATH = RESOURCES_DIR / "sena_logo.png"
 CONFIDENTIALITY_TEMPLATE = (
     RESOURCES_DIR
     / "templates"

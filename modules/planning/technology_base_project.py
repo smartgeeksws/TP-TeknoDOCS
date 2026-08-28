@@ -25,7 +25,7 @@ CONTENT_FIELDS = (
 )
 
 
-PDF_LAYOUT_VERSION = 2
+PDF_LAYOUT_VERSION = 3
 
 def render_technology_base_project(project_service: ProjectService) -> None:
     project = project_service.get_active_project()

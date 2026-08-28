@@ -13,9 +13,16 @@ from typing import Any
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.drawing.image import Image as SpreadsheetImage
+from openpyxl.drawing.spreadsheet_drawing import (
+    AnchorMarker,
+    OneCellAnchor,
+    XDRPositiveSize2D,
+)
 from openpyxl.styles import Alignment
+from openpyxl.utils.units import pixels_to_EMU, points_to_pixels
 
-from config.settings import TECHNOLOGY_BASE_PROJECT_TEMPLATE
+from config.settings import SENA_LOGO_PATH, TECHNOLOGY_BASE_PROJECT_TEMPLATE
 from services.document_generation.spreadsheet_pdf import (
     SpreadsheetPdfError,
     convert_xlsx_to_pdf,
@@ -68,6 +75,7 @@ class TechnologyBaseProjectService:
             workbook = load_workbook(path)
         sheet = workbook["GCDTP-F-019"]
         self._add_fourth_objective(sheet)
+        self._add_centered_sena_logo(sheet)
 
         expert = project["expert"]
         fixed_values = {
@@ -110,6 +118,52 @@ class TechnologyBaseProjectService:
         workbook.active = workbook.sheetnames.index("GCDTP-F-019")
         workbook.save(path)
 
+    @staticmethod
+    def _add_centered_sena_logo(sheet: Any) -> None:
+        if not SENA_LOGO_PATH.is_file():
+            raise TechnologyBaseProjectError("No se encontro el logo institucional del SENA.")
+
+        logo = SpreadsheetImage(SENA_LOGO_PATH)
+        aspect_ratio = logo.width / logo.height
+        logo.height = 58
+        logo.width = logo.height * aspect_ratio
+        merged_width = sum(
+            int((sheet.column_dimensions[column].width or 13) * 7 + 5)
+            for column in ("A", "B", "C", "D", "E")
+        )
+        merged_height = points_to_pixels(
+            sum(sheet.row_dimensions[row].height or 15 for row in (1, 2))
+        )
+        left = max(0, (merged_width - logo.width) / 2)
+        top = max(0, (merged_height - logo.height) / 2)
+
+        column_widths = [
+            int((sheet.column_dimensions[column].width or 13) * 7 + 5)
+            for column in ("A", "B", "C", "D", "E")
+        ]
+        column_index = 0
+        while column_index < len(column_widths) - 1 and left >= column_widths[column_index]:
+            left -= column_widths[column_index]
+            column_index += 1
+        row_one_height = points_to_pixels(sheet.row_dimensions[1].height or 15)
+        row_index = 0
+        if top >= row_one_height:
+            top -= row_one_height
+            row_index = 1
+
+        logo.anchor = OneCellAnchor(
+            _from=AnchorMarker(
+                col=column_index,
+                colOff=pixels_to_EMU(left),
+                row=row_index,
+                rowOff=pixels_to_EMU(top),
+            ),
+            ext=XDRPositiveSize2D(
+                cx=pixels_to_EMU(logo.width),
+                cy=pixels_to_EMU(logo.height),
+            ),
+        )
+        sheet.add_image(logo)
     @staticmethod
     def _add_fourth_objective(sheet: Any) -> None:
         downstream_merges = [
