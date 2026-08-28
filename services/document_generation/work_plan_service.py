@@ -93,7 +93,7 @@ class WorkPlanService:
         4: ("4.1", "4.2", "4.3", "4.4", "4.5", "4.6"),
     }
     PHASE_WEIGHTS = (0.05, 0.05, 0.80, 0.10)
-    MIN_PHASE_LENGTHS = (2, 4, 3, 2)
+    MIN_PHASE_LENGTHS = (2, 3, 4, 2)
     MAX_DAILY_ACTIVITIES = 3
     MAX_ACTIVITY_DURATION = 3
     START_CODES = {"1.1", "2.1", "3.1", "4.1"}
@@ -122,13 +122,12 @@ class WorkPlanService:
                 self._activity(codes[0], descriptions, phase, "Inicio", phase_start, phase_start)
             )
             middle_codes = codes[1:-2]
+            middle_scheduler = (
+                self._schedule_execution_middle if phase == 3 else self._schedule_middle
+            )
             schedule.extend(
-                self._schedule_middle(
-                    middle_codes,
-                    descriptions,
-                    phase,
-                    phase_start,
-                    phase_end,
+                middle_scheduler(
+                    middle_codes, descriptions, phase, phase_start, phase_end
                 )
             )
             schedule.append(
@@ -233,7 +232,7 @@ class WorkPlanService:
                 raise WorkPlanError(f"La actividad {item.code} esta fuera de las fechas del proyecto.")
             if item.end_date < item.start_date:
                 raise WorkPlanError(f"La actividad {item.code} tiene fechas invalidas.")
-            if item.duration > self.MAX_ACTIVITY_DURATION:
+            if item.phase != 3 and item.duration > self.MAX_ACTIVITY_DURATION:
                 raise WorkPlanError(
                     f"La actividad {item.code} no puede superar tres dias."
                 )
@@ -444,6 +443,32 @@ class WorkPlanService:
             raise WorkPlanError("La plantilla contiene actividades sin descripcion.")
         return descriptions
 
+    def _schedule_execution_middle(
+        self,
+        codes: tuple[str, ...],
+        descriptions: dict[str, str],
+        phase: int,
+        phase_start: date,
+        phase_end: date,
+    ) -> list[ScheduledActivity]:
+        """Distribuye secuencialmente las actividades dentro del bloque de ejecución."""
+
+        interior_start = phase_start + timedelta(days=1)
+        interior_days = max(0, (phase_end - phase_start).days - 1)
+        if interior_days < len(codes):
+            return self._schedule_middle(
+                codes, descriptions, phase, phase_start, phase_end
+            )
+        lengths = self._equal_lengths(interior_days, len(codes))
+        result: list[ScheduledActivity] = []
+        cursor = interior_start
+        for code, length in zip(codes, lengths):
+            end = cursor + timedelta(days=length - 1)
+            result.append(
+                self._activity(code, descriptions, phase, "Desarrollo", cursor, end)
+            )
+            cursor = end + timedelta(days=1)
+        return result
     def _schedule_middle(
         self,
         codes: tuple[str, ...],
@@ -534,26 +559,39 @@ class WorkPlanService:
 
     def _allocate_phase_lengths(self, total_days: int) -> list[int]:
         raw = [total_days * weight for weight in self.PHASE_WEIGHTS]
+        execution_days = round(raw[2])
+        execution_days = max(self.MIN_PHASE_LENGTHS[2], execution_days)
+        execution_days = min(
+            execution_days,
+            total_days - sum(self.MIN_PHASE_LENGTHS[index] for index in (0, 1, 3)),
+        )
         lengths = [
-            max(minimum, math.floor(value))
-            for value, minimum in zip(raw, self.MIN_PHASE_LENGTHS)
+            max(self.MIN_PHASE_LENGTHS[index], math.floor(raw[index]))
+            for index in range(4)
         ]
+        lengths[2] = execution_days
+        adjustable = (0, 1, 3)
         while sum(lengths) < total_days:
-            index = max(range(4), key=lambda item: raw[item] - lengths[item])
+            index = max(adjustable, key=lambda item: raw[item] - lengths[item])
             lengths[index] += 1
         while sum(lengths) > total_days:
             candidates = [
                 index
-                for index, value in enumerate(lengths)
-                if value > self.MIN_PHASE_LENGTHS[index]
+                for index in adjustable
+                if lengths[index] > self.MIN_PHASE_LENGTHS[index]
             ]
             if not candidates:
-                raise WorkPlanError("No es posible distribuir las cuatro fases en el periodo indicado.")
+                raise WorkPlanError(
+                    "No es posible distribuir las cuatro fases en el periodo indicado."
+                )
             index = max(candidates, key=lambda item: lengths[item] - raw[item])
             lengths[index] -= 1
         return lengths
 
-
+    @staticmethod
+    def _equal_lengths(total: int, count: int) -> list[int]:
+        quotient, remainder = divmod(total, count)
+        return [quotient + (1 if index < remainder else 0) for index in range(count)]
     @staticmethod
     def _day_numbers(start_date: date, end_date: date) -> set[int]:
         return {

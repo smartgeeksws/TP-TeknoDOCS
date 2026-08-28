@@ -12,7 +12,7 @@ from services.document_generation.work_plan_service import (
 from services.project_service import ProjectService
 
 
-WORK_PLAN_VERSION = 3
+WORK_PLAN_VERSION = 4
 
 
 def render_work_plan(project_service: ProjectService) -> None:
