@@ -93,8 +93,9 @@ class WorkPlanService:
         4: ("4.1", "4.2", "4.3", "4.4", "4.5", "4.6"),
     }
     PHASE_WEIGHTS = (0.05, 0.05, 0.80, 0.10)
-    MIN_PHASE_LENGTHS = (2, 3, 3, 2)
+    MIN_PHASE_LENGTHS = (2, 4, 3, 2)
     MAX_DAILY_ACTIVITIES = 3
+    MAX_ACTIVITY_DURATION = 3
     START_CODES = {"1.1", "2.1", "3.1", "4.1"}
     FINAL_CODES = {"1.4", "2.8", "3.7", "4.5"}
     CLOSING_PAIRS = {
@@ -232,6 +233,10 @@ class WorkPlanService:
                 raise WorkPlanError(f"La actividad {item.code} esta fuera de las fechas del proyecto.")
             if item.end_date < item.start_date:
                 raise WorkPlanError(f"La actividad {item.code} tiene fechas invalidas.")
+            if item.duration > self.MAX_ACTIVITY_DURATION:
+                raise WorkPlanError(
+                    f"La actividad {item.code} no puede superar tres dias."
+                )
         if by_code["1.1"].start_date != project_start:
             raise WorkPlanError("La actividad 1.1 debe iniciar con el proyecto.")
         if by_code["4.5"].start_date != project_end or by_code["4.6"].start_date != project_end:
@@ -377,7 +382,9 @@ class WorkPlanService:
         sheet["C11"].alignment = Alignment(
             horizontal="left", vertical="center", wrap_text=True, shrink_to_fit=False
         )
-        sheet["C11"].font = copy(sheet["C11"].font, size=9)
+        project_name_font = copy(sheet["C11"].font)
+        project_name_font.sz = 9
+        sheet["C11"].font = project_name_font
         sheet["R11"] = project.get("code") or "N.A."
         sheet["R12"] = f"TRL {project.get('target_trl')}"
         assigned_name = self.short_name(talent.get("name"))
@@ -480,6 +487,8 @@ class WorkPlanService:
             changed = False
             for index in expansion_order:
                 left, right = intervals[index]
+                if right - left + 1 >= self.MAX_ACTIVITY_DURATION:
+                    continue
                 candidates = [
                     day_index
                     for day_index in (right + 1, left - 1)
