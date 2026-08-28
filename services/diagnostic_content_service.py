@@ -6,6 +6,7 @@ import json
 import re
 from datetime import date
 from typing import Any, Callable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from services.project_content_service import ProjectContentService
 
@@ -18,6 +19,29 @@ ProgressCallback = Callable[[str], None]
 
 
 class DiagnosticContentService:
+    PARENTHETICAL_LINK_PATTERN = re.compile(
+        r"\s*\(\s*\[[^\]\r\n]{1,200}\]"
+        r"\((?:https?://)[^\s()\r\n]{1,2048}\)\s*\)",
+        re.IGNORECASE,
+    )
+    MARKDOWN_LINK_PATTERN = re.compile(
+        r"\[([^\]\r\n]{1,200})\]"
+        r"\((?:https?://)[^\s()\r\n]{1,2048}\)",
+        re.IGNORECASE,
+    )
+    RAW_URL_PATTERN = re.compile(
+        r"\bhttps?://[^\s<>\[\]{}()]+(?<![.,;:!?])",
+        re.IGNORECASE,
+    )
+    SOURCE_URL_PATTERN = re.compile(
+        r"^\s*(?:\(\s*)?\[[^\]\r\n]{1,200}\]"
+        r"\((https?://[^\s()\r\n]{1,2048})\)(?:\s*\))?\s*$",
+        re.IGNORECASE,
+    )
+    TOOL_CITATION_PATTERN = re.compile(
+        r"\s*cite[^\r\n]{1,500}"
+    )
+    TRACKING_QUERY_KEYS = frozenset({"fbclid", "gclid", "mc_cid", "mc_eid"})
     NARRATIVE_FIELDS = {
         "introduction": (160, 250),
         "problem_statement": (160, 250),
@@ -87,13 +111,21 @@ class DiagnosticContentService:
         client = OpenAI(api_key=api_key, timeout=300.0)
         try:
             response = client.responses.create(**request)
-            content = json.loads(response.output_text)
+            content = self._sanitize_generated_content(
+                json.loads(response.output_text)
+            )
+            self._normalize_objectives(content)
+            if self._contains_empty_string(content):
+                raise DiagnosticContentError(
+                    "La respuesta generada contiene un campo obligatorio vacío "
+                    "después de normalizar y limpiar el contenido. Intenta generar "
+                    "el diagnóstico nuevamente."
+                )
         except (OpenAIError, json.JSONDecodeError, TypeError, ValueError) as error:
             raise DiagnosticContentError(
                 f"No fue posible investigar y generar el diagnóstico: {error}"
             ) from error
 
-        self._normalize_objectives(content)
         self._notify(progress, "Preparando contenido para revisión manual...")
         return content
 
@@ -128,17 +160,106 @@ class DiagnosticContentService:
         ]
 
     @classmethod
+    def _sanitize_generated_content(
+        cls,
+        value: Any,
+        path: tuple[str, ...] = (),
+    ) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls._sanitize_generated_content(
+                    item,
+                    path + (str(key),),
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                cls._sanitize_generated_content(
+                    item,
+                    path + (str(index),),
+                )
+                for index, item in enumerate(value)
+            ]
+        if isinstance(value, str):
+            field = path[-1] if path else ""
+            if field == "url":
+                return cls._canonical_source_url(value)
+            text = cls.PARENTHETICAL_LINK_PATTERN.sub("", value)
+            text = cls.MARKDOWN_LINK_PATTERN.sub(r"\1", text)
+            text = cls.TOOL_CITATION_PATTERN.sub("", text)
+            if field != "doi":
+                text = cls.RAW_URL_PATTERN.sub("", text)
+            text = re.sub(r"\(\s*\)", "", text)
+            text = re.sub(r"[ \t]{2,}", " ", text)
+            text = re.sub(r"[ \t]+([,.;:!?])", r"\1", text)
+            return text.strip()
+        return value
+
+    @classmethod
+    def _canonical_source_url(cls, value: str) -> str:
+        url = value.strip()
+        markdown_match = cls.SOURCE_URL_PATTERN.fullmatch(url)
+        if markdown_match is not None:
+            url = markdown_match.group(1)
+        elif url.startswith("(") and url.endswith(")"):
+            url = url[1:-1].strip()
+        try:
+            parts = urlsplit(url)
+        except ValueError:
+            return ""
+        if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+            return ""
+        query = [
+            (key, item)
+            for key, item in parse_qsl(parts.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+            and key.lower() not in cls.TRACKING_QUERY_KEYS
+        ]
+        return urlunsplit(
+            (
+                parts.scheme.lower(),
+                parts.netloc,
+                parts.path,
+                urlencode(query, doseq=True),
+                parts.fragment,
+            )
+        )
+
+    @classmethod
+    def _contains_empty_string(
+        cls,
+        value: Any,
+        path: tuple[str, ...] = (),
+    ) -> bool:
+        if isinstance(value, dict):
+            return any(
+                cls._contains_empty_string(item, path + (str(key),))
+                for key, item in value.items()
+            )
+        if isinstance(value, list):
+            return any(
+                cls._contains_empty_string(item, path + (str(index),))
+                for index, item in enumerate(value)
+            )
+        return (
+            isinstance(value, str)
+            and not value.strip()
+            and (not path or path[-1] != "doi")
+        )
+
+    @classmethod
     def _schema(cls) -> dict[str, Any]:
-        string = {"type": "string", "minLength": 1}
+        string = {"type": "string", "pattern": r"^[\s\S]+$"}
         narrative = {
             "type": "string",
-            "minLength": 1,
-            "description": "Texto técnico de 190 a 220 palabras; contar antes de responder.",
+            "pattern": r"^[\s\S]{1200,2200}$",
+            "description": "Texto técnico normalmente de 160 a 250 palabras como guía de profundidad, sin declarar conteos ni incluir metadatos.",
         }
         surveillance = {
             "type": "string",
-            "minLength": 1,
-            "description": "Vigilancia tecnológica de 330 a 420 palabras; contar antes de responder.",
+            "pattern": r"^[\s\S]{1700,4200}$",
+            "description": "Vigilancia tecnológica normalmente de 280 a 500 palabras como guía de profundidad, sin declarar conteos ni incluir metadatos.",
         }
         source = {
             "type": "object",
@@ -237,11 +358,21 @@ class DiagnosticContentService:
     @staticmethod
     def _instructions(document_date: date) -> str:
         return f"""
-Actúa como investigador y formulador técnico de proyectos SENA. Investiga en la web antes de redactar. Usa exclusivamente fuentes primarias, científicas, gubernamentales, normativas, universitarias, patentes o documentación oficial verificable. Prohíbe Wikipedia, blogs, foros, agregadores y contenido SEO. Prioriza publicaciones entre 2022 y {document_date.year}; usa anteriores solo para normas vigentes o fundamentos imprescindibles. No inventes autores, títulos, años, DOI, URL, normas, productos ni patentes.
+Actúa como investigador y formulador técnico de proyectos SENA. Antes de redactar, interpreta prioritariamente la descripción del proyecto y determina si corresponde a software, diseño industrial, electrónica, agroindustria, biotecnología, prototipado, automatización, desarrollo de producto, desarrollo tecnológico u otra naturaleza. Usa como contexto principal el nombre, el código y la descripción registrados, las tecnologías disponibles, los roles y los beneficiarios mencionados en la descripción y el contexto técnico. El nombre y el código son identificadores literales: no los modifiques, resumas ni reinterpretes. No generes Regional, Centro de Formación ni Tecnoparque; el sistema los completa con valores institucionales constantes.
 
-Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Como guía de redacción, procura mantener rangos de 160–250 y 280–500 palabras, respectivamente; el usuario realizará la revisión final.
+Investiga en la web antes de redactar. Usa exclusivamente fuentes reales y verificables: primarias, científicas, gubernamentales, normativas, universitarias, patentes o documentación oficial. No uses Wikipedia, wikis, blogs, foros, agregadores, contenido SEO ni fuentes de baja confiabilidad. Puedes emplear fuentes anteriores a 2022 cuando sean pertinentes por su vigencia, relevancia, carácter fundacional o aplicación al proyecto. No inventes autores, títulos, años, DOI, URL, normas, productos ni patentes.
 
-Cada sección debe desarrollar un propósito diferente y aportar información nueva. No repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre secciones; tampoco uses referencias como «ver sección anterior», «como se indicó previamente» o equivalentes. Genera un objetivo general breve que comience directamente con un verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también iniciados directamente en infinitivo y en secuencia lógica. No antepongas numeraciones, viñetas ni etiquetas como «Objetivo general» u «Objetivo específico». Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
+Redacta en español técnico institucional y tercera persona. No copies literalmente las respuestas del usuario ni uses frases vacías. Usa normalmente entre 160 y 250 palabras en cada campo narrativo y entre 280 y 500 en technology_surveillance como guía de profundidad; no cuentes, declares ni muestres esas longitudes. La profundidad se aplica individualmente a todos los campos narrativos, incluidos problem_identified, problem_impact y expected_results: no entregues resúmenes breves ni compenses un campo corto con otro más extenso. No incluyas en ningún campo etiquetas o metadatos como «Palabras: 185», conteos de palabras, instrucciones o comentarios internos. Cada sección debe cumplir un propósito distinto y aportar información nueva: no repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre apartados. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones.
+
+Formula objetivos generales, técnicos y metodológicos, adaptados a la naturaleza detectada y sin describir funcionalidades particulares que puedan cambiar. El objetivo general debe comenzar directamente con un verbo en infinitivo. Genera entre 3 y 5 objetivos específicos que también comiencen con infinitivo y representen una secuencia metodológica coherente. Para software, cubre de forma contextual etapas como identificar requisitos funcionales y no funcionales, modelar arquitectura/procesos/componentes, desarrollar la solución y validar el cumplimiento mediante pruebas. Para otros proyectos, selecciona solo las etapas pertinentes entre identificación de necesidades, diseño, modelado, desarrollo, construcción, prototipado, implementación, validación y pruebas. No copies ejemplos literalmente. No antepongas numeraciones, viñetas, títulos ni etiquetas como «Objetivo general» u «Objetivo específico».
+
+Para similar_products, realiza búsquedas conceptuales amplias: no exijas coincidencia exacta con el producto. Selecciona referentes tecnológicos, metodológicos o funcionales suficientemente relacionados con el problema, el proceso, la función o la tecnología. Incluye obligatoriamente referentes nacionales e internacionales dentro del conjunto. En software considera sistemas de gestión, plataformas institucionales, compras, proveedores, contratación u otras categorías equivalentes según el contexto; en agroindustria, productos, procesos y tecnologías de procesamiento relacionados; en diseño industrial, funciones, prototipos y soluciones técnicas equivalentes. Genera entre 2 y 3 referentes cuando existan fuentes adecuadas.
+
+Para scientific_references, amplía la búsqueda a cualquiera de estos ejes pertinentes: tipo de proyecto, problema, tecnologías, metodologías, arquitecturas, materiales, procesos productivos, técnicas de desarrollo, herramientas o tendencias tecnológicas. En software puede incluir arquitectura, sistemas de información, inteligencia artificial, bases de datos, desarrollo web, automatización, seguridad, experiencia de usuario o las tecnologías específicas declaradas. Elige de 2 a 3 artículos o referentes académicos reales cuando existan.
+
+La viabilidad debe concluir siempre que el proyecto es viable, con sustento en su descripción, características técnicas, necesidades y recursos disponibles. Identifica el beneficiario principal a partir de la descripción y el contexto (institución, centro, programa, empresa, emprendedor, talento, comunidad, proceso productivo u otro actor realmente mencionado). Explica solo los beneficios directamente coherentes con el proyecto, como optimización, reducción de tiempos o errores, automatización, trazabilidad, productividad, conocimiento, validación, apropiación tecnológica o innovación. No enumeres beneficios no sustentados ni redactes conclusiones negativas, de baja viabilidad o de no recomendación.
+
+Cada afirmación técnica que lo requiera debe contener una cita parentética APA 7 de autor y año, consistente con las fuentes consultadas. En campos narrativos y campos citation no incluyas enlaces Markdown, URL, dominios, parámetros UTM ni marcadores internos de herramientas de búsqueda; registra la URL canónica únicamente en sources[].url. Para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta. Selecciona solo normas aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas. Si glossary_requested es falso, devuelve glossary vacío; si es verdadero, define exclusivamente los términos solicitados. No incluyas datos personales que no sean necesarios ni los inventes. El usuario realizará la revisión final del contenido y las fuentes.
 """.strip()
 
     @staticmethod
@@ -256,7 +387,10 @@ Cada sección debe desarrollar un propósito diferente y aportar información nu
             "target_trl": project.get("target_trl"),
             "start_date": str(project.get("start_date") or ""),
             "end_date": str(project.get("end_date") or ""),
-            "team_roles": [item.get("role_name") or item.get("role") for item in project.get("talents", [])],
+            "team_roles": [
+                item.get("role_name") or item.get("role")
+                for item in project.get("talents", [])
+            ] + (["Experto Tecnoparque"] if project.get("expert") else []),
         }
 
     def validate_content(

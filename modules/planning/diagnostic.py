@@ -76,8 +76,10 @@ def render_diagnostic(
         st.write(f"**Descripción:** {project.get('description') or 'No registrada'}")
 
     st.info(
-        "La investigación se realiza con búsqueda web y OpenAI. Solo se envían datos "
-        "técnicos del proyecto y roles; no se envían documentos, correos, firmas ni NIT.",
+        "La investigación se realiza con búsqueda web y OpenAI. Se envían el contexto "
+        "técnico del proyecto, los roles y las respuestas del formulario. No se adjuntan "
+        "documentos ni se envían campos estructurados de identificación personal, correo, "
+        "firma o NIT; evita incluir esos datos en los textos libres.",
         icon=":material/security:",
     )
 
