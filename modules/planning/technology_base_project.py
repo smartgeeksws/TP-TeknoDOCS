@@ -25,6 +25,8 @@ CONTENT_FIELDS = (
 )
 
 
+PDF_LAYOUT_VERSION = 2
+
 def render_technology_base_project(project_service: ProjectService) -> None:
     project = project_service.get_active_project()
     st.caption("Planeaci\u00f3n Estrat\u00e9gica")
@@ -57,8 +59,8 @@ def render_technology_base_project(project_service: ProjectService) -> None:
             for field, _, _ in CONTENT_FIELDS:
                 st.session_state[f"{prefix}_{field}"] = generated[field]
             st.session_state[generated_key] = True
-            st.session_state.pop(f"{prefix}_pdf", None)
-            st.session_state.pop(f"{prefix}_filename", None)
+            st.session_state.pop(f"{prefix}_pdf_v{PDF_LAYOUT_VERSION}", None)
+            st.session_state.pop(f"{prefix}_filename_v{PDF_LAYOUT_VERSION}", None)
             st.rerun()
 
     st.subheader("Contenido t\u00e9cnico editable")
@@ -86,11 +88,11 @@ def render_technology_base_project(project_service: ProjectService) -> None:
             except (TechnologyBaseProjectError, OSError) as error:
                 st.error(f"No fue posible generar el documento: {error}")
             else:
-                st.session_state[f"{prefix}_pdf"] = pdf_data
-                st.session_state[f"{prefix}_filename"] = filename
+                st.session_state[f"{prefix}_pdf_v{PDF_LAYOUT_VERSION}"] = pdf_data
+                st.session_state[f"{prefix}_filename_v{PDF_LAYOUT_VERSION}"] = filename
 
-    pdf_data = st.session_state.get(f"{prefix}_pdf")
-    filename = st.session_state.get(f"{prefix}_filename")
+    pdf_data = st.session_state.get(f"{prefix}_pdf_v{PDF_LAYOUT_VERSION}")
+    filename = st.session_state.get(f"{prefix}_filename_v{PDF_LAYOUT_VERSION}")
     if pdf_data and filename:
         st.success("PDF generado en memoria. No se guard\u00f3 en la base de datos.")
         st.download_button(

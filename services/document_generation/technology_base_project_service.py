@@ -240,7 +240,7 @@ class TechnologyBaseProjectService:
         cell.value = "" if value is None else str(value)
         cell.alignment = copy(cell.alignment)
         cell.alignment = Alignment(
-            horizontal=cell.alignment.horizontal,
+            horizontal="justify",
             vertical="top",
             text_rotation=cell.alignment.text_rotation,
             wrap_text=True,
@@ -255,9 +255,9 @@ class TechnologyBaseProjectService:
             sheet.column_dimensions[column].width or 13
             for column in ("B", "C", "D", "E", "F")
         )
-        # Excel mide el ancho en unidades aproximadas de caracteres. Se reserva
-        # un 10 % para los margenes internos sin agregar una linea vacia al final.
-        characters_per_line = max(20, int(merged_width * 0.90))
+        # La celda combinada B:F admite aproximadamente 1,05 caracteres por
+        # unidad de ancho al exportar con Calibri 11 mediante Excel o LibreOffice.
+        characters_per_line = max(20, int(merged_width * 1.05))
         estimated_lines = sum(
             max(
                 1,
@@ -274,7 +274,7 @@ class TechnologyBaseProjectService:
         )
         font_size = float(sheet.cell(row, 2).font.sz or 11)
         line_height = font_size * 1.25
-        sheet.row_dimensions[row].height = max(15, estimated_lines * line_height + 2)
+        sheet.row_dimensions[row].height = max(15, estimated_lines * line_height + 1)
 
     @staticmethod
     def _validate(project: dict[str, Any], content: dict[str, str]) -> None:
