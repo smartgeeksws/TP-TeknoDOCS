@@ -1,4 +1,4 @@
-﻿"""Utilidades graficas compartidas para plantillas de hojas de calculo."""
+"""Utilidades graficas compartidas para plantillas de hojas de calculo."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from openpyxl.drawing.spreadsheet_drawing import (
     OneCellAnchor,
     XDRPositiveSize2D,
 )
-from openpyxl.utils import get_column_letter, range_boundaries
+from openpyxl.utils import range_boundaries
 from openpyxl.utils.units import pixels_to_EMU, points_to_pixels
 
 
@@ -32,18 +32,27 @@ def add_centered_image(
     image.height = height
     image.width = height * aspect_ratio
 
-    column_widths = [
-        int(
+    dimensions = tuple(sheet.column_dimensions.values())
+
+    def column_width(column: int) -> int:
+        dimension = next(
             (
-                sheet.column_dimensions[get_column_letter(column)].width
-                or sheet.sheet_format.defaultColWidth
-                or 13
-            )
-            * 7
-            + 5
+                item
+                for item in dimensions
+                if (item.min or column) <= column <= (item.max or column)
+            ),
+            None,
         )
-        for column in range(min_col, max_col + 1)
-    ]
+        width = (
+            dimension.width
+            if dimension is not None and dimension.width is not None
+            else sheet.sheet_format.defaultColWidth
+            or sheet.sheet_format.baseColWidth
+            or 10
+        )
+        return max(1, round(width * 7))
+
+    column_widths = [column_width(column) for column in range(min_col, max_col + 1)]
     row_heights = [
         points_to_pixels(
             sheet.row_dimensions[row].height
