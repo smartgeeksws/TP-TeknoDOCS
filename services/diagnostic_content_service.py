@@ -21,6 +21,8 @@ ProgressCallback = Callable[[str], None]
 
 
 class DiagnosticContentService:
+    MAX_NARRATIVE_REPAIR_ATTEMPTS = 2
+
     NARRATIVE_FIELDS = {
         "introduction": (160, 250),
         "problem_statement": (160, 250),
@@ -96,17 +98,115 @@ class DiagnosticContentService:
             },
             "store": False,
         }
+        client = OpenAI(api_key=api_key, timeout=300.0)
         try:
-            response = OpenAI(api_key=api_key, timeout=300.0).responses.create(**request)
+            response = client.responses.create(**request)
             content = json.loads(response.output_text)
         except (OpenAIError, json.JSONDecodeError, TypeError, ValueError) as error:
             raise DiagnosticContentError(
                 f"No fue posible investigar y generar el diagnóstico: {error}"
             ) from error
 
+        for attempt in range(self.MAX_NARRATIVE_REPAIR_ATTEMPTS + 1):
+            invalid_fields = self._invalid_narrative_fields(content)
+            if not invalid_fields:
+                break
+            if attempt >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
+                details = "; ".join(invalid_fields.values())
+                raise DiagnosticContentError(
+                    "La IA no logró ajustar las secciones narrativas después de "
+                    f"{self.MAX_NARRATIVE_REPAIR_ATTEMPTS} intentos: {details}"
+                )
+            self._notify(
+                progress,
+                "Ajustando únicamente las secciones que no cumplen "
+                f"({attempt + 1}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
+            )
+            repaired = self._repair_narrative_fields(
+                client=client,
+                model=model,
+                content=content,
+                invalid_fields=invalid_fields,
+                openai_error=OpenAIError,
+            )
+            content.update(repaired)
+
         self._notify(progress, "Validando fuentes, citas y referencias...")
         self._validate_content(content, document_date, form_data)
         return content
+
+    def _repair_narrative_fields(
+        self,
+        *,
+        client: Any,
+        model: str,
+        content: dict[str, Any],
+        invalid_fields: dict[str, str],
+        openai_error: type[Exception],
+    ) -> dict[str, str]:
+        """Reescribe solo narrativas inválidas y conserva la investigación validable."""
+        properties = {
+            field: {
+                "type": "string",
+                "minLength": 1,
+                "description": (
+                    "Texto de 330 a 420 palabras."
+                    if field == "technology_surveillance"
+                    else "Texto de 190 a 220 palabras."
+                ),
+            }
+            for field in invalid_fields
+        }
+        context_sections = {
+            field: content.get(field, "")
+            for field in self.NARRATIVE_FIELDS
+            if field not in invalid_fields
+        }
+        request = {
+            "model": model,
+            "instructions": self._narrative_repair_instructions(),
+            "input": json.dumps(
+                {
+                    "secciones_a_corregir": {
+                        field: {
+                            "motivo": reason,
+                            "texto_actual": content.get(field, ""),
+                            "rango": (
+                                "330-420 palabras"
+                                if field == "technology_surveillance"
+                                else "190-220 palabras"
+                            ),
+                        }
+                        for field, reason in invalid_fields.items()
+                    },
+                    "otras_secciones_para_evitar_repeticiones": context_sections,
+                    "referencias_disponibles": content.get("references", []),
+                },
+                ensure_ascii=False,
+            ),
+            "max_output_tokens": 12000,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "secciones_diagnostico_corregidas",
+                    "schema": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": list(properties),
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                }
+            },
+            "store": False,
+        }
+        try:
+            response = client.responses.create(**request)
+            return json.loads(response.output_text)
+        except (openai_error, json.JSONDecodeError, TypeError, ValueError) as error:
+            raise DiagnosticContentError(
+                f"No fue posible ajustar las secciones narrativas: {error}"
+            ) from error
 
     @classmethod
     def _schema(cls) -> dict[str, Any]:
@@ -222,8 +322,37 @@ Actúa como investigador y formulador técnico de proyectos SENA. Investiga en l
 
 Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Los límites absolutos validados por el sistema son 160–250 y 280–500, respectivamente; no te acerques a esos límites.
 
-Genera un objetivo general breve que comience con verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también en infinitivo y secuencia lógica. Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
+Cada sección debe desarrollar un propósito diferente y aportar información nueva. No repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre secciones; tampoco uses referencias como «ver sección anterior», «como se indicó previamente» o equivalentes. Genera un objetivo general breve que comience con verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también en infinitivo y secuencia lógica. Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
 """.strip()
+
+    @staticmethod
+    def _narrative_repair_instructions() -> str:
+        return """
+Actúa como editor técnico de proyectos SENA. Reescribe exclusivamente los campos solicitados y devuelve únicamente el JSON exigido. Cuenta las palabras de cada campo antes de responder y respeta el rango indicado. El texto debe ser sustantivo, autónomo y desarrollado: se prohíben resúmenes mínimos, marcadores pendientes y referencias como «ver sección anterior» o «como se indicó previamente».
+
+Compara cada texto con las demás secciones proporcionadas. Cada apartado debe cumplir un propósito diferente, aportar información nueva y evitar repetir párrafos, argumentos, antecedentes, citas o conclusiones ya usados. Conserva la coherencia técnica y utiliza solamente citas presentes en las referencias disponibles; no inventes fuentes ni copies literalmente el texto original.
+""".strip()
+
+    @classmethod
+    def _invalid_narrative_fields(cls, content: dict[str, Any]) -> dict[str, str]:
+        invalid: dict[str, str] = {}
+        forbidden_references = (
+            "ver sección", "sección anterior", "indicado previamente",
+            "mencionado anteriormente", "descrito anteriormente",
+        )
+        for field, (minimum, maximum) in cls.NARRATIVE_FIELDS.items():
+            value = str(content.get(field, "")).strip()
+            count = len(value.split())
+            if count < minimum or count > maximum:
+                invalid[field] = (
+                    f"{field} tiene {count} palabras; debe tener entre "
+                    f"{minimum} y {maximum}"
+                )
+                continue
+            normalized = value.casefold()
+            if any(reference in normalized for reference in forbidden_references):
+                invalid[field] = f"{field} remite a otra sección en lugar de desarrollarse"
+        return invalid
 
     @staticmethod
     def _safe_context(project: dict[str, Any]) -> dict[str, Any]:
