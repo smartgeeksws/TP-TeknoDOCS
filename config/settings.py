@@ -31,6 +31,11 @@ WORK_PLAN_TEMPLATE = (
     / "templates"
     / "GCDTP-F-021_V01_Plan_trabajo_proyecto_base_tecnologica.xlsx"
 )
+DIAGNOSTIC_TEMPLATE = (
+    RESOURCES_DIR
+    / "templates"
+    / "GCDTP-F-020_V01_Diagnostico_proyecto_estado_arte.docx"
+)
 FIXED_SIGNATURES_DIR = RESOURCES_DIR / "firmas"
 
 DOCUMENT_TYPES = ("CC", "TI", "NIT")

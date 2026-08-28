@@ -5,6 +5,7 @@ import streamlit as st
 from config.settings import PHASE_DOCUMENTS, PHASES
 from services.document_generation.confidentiality_service import ConfidentialityService
 from services.document_generation.infrastructure_service import InfrastructureService
+from services.diagnostic_repository import DiagnosticRepository
 from services.project_service import ProjectService
 from ui.components import metric_card
 
@@ -27,12 +28,19 @@ def render_dashboard(project_service: ProjectService) -> None:
 
     confidentiality_generated = ConfidentialityService.output_path(project).is_file()
     infrastructure_generated = InfrastructureService.output_path(project).is_file()
+    diagnostic_saved = DiagnosticRepository().load(project["id"])
     document_states = [
         (
             "Acta de Confidencialidad y Compromiso",
             "Generado" if confidentiality_generated else "Pendiente",
         ),
         ("Acta de Uso de Infraestructura", "Generado" if infrastructure_generated else "Pendiente"),
+        (
+            "Diagnóstico del proyecto y estado del arte",
+            "Generado"
+            if diagnostic_saved and diagnostic_saved.get("content")
+            else "Pendiente",
+        ),
     ]
     generated = sum(state == "Generado" for _, state in document_states)
     pending = len(document_states) - generated

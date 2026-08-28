@@ -161,6 +161,26 @@ def initialize_schema() -> None:
                     FOREIGN KEY (empresa_propietaria_id) REFERENCES empresas(id)
                     """
                 )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS documentos_proyecto (
+                    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    proyecto_id BIGINT UNSIGNED NOT NULL,
+                    clave_documento VARCHAR(80) NOT NULL,
+                    datos_formulario LONGTEXT NOT NULL,
+                    contenido_generado LONGTEXT NULL,
+                    fuentes_json LONGTEXT NULL,
+                    generado_en DATETIME NULL,
+                    creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_documento_proyecto UNIQUE
+                        (proyecto_id, clave_documento),
+                    CONSTRAINT fk_documento_proyecto
+                        FOREIGN KEY (proyecto_id) REFERENCES proyectos(id)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+                """
+            )
             connection.commit()
             cursor.close()
     except mysql.connector.Error as error:
