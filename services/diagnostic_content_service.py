@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any, Callable
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
 from services.project_content_service import ProjectContentService
 
@@ -416,8 +413,7 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
         valid_sources = [source for source in sources if self._valid_source_metadata(source, document_date)]
         if len(valid_sources) != len(sources):
             raise DiagnosticContentError("Una o más fuentes no cumplen los criterios de autor, fecha o URL.")
-        if not self._verify_urls([source["url"] for source in sources]):
-            raise DiagnosticContentError("No fue posible comprobar la existencia de una o más fuentes. Regenera para buscar alternativas.")
+
         references = {
             " ".join(str(reference).split()).casefold()
             for reference in content.get("references", [])
@@ -475,20 +471,6 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
             and bool(str(source.get("title", "")).strip())
         )
 
-    @staticmethod
-    def _verify_urls(urls: list[str]) -> bool:
-        def exists(url: str) -> bool:
-            request = Request(url, method="HEAD", headers={"User-Agent": "TP-TeknoDOCS/1.0"})
-            try:
-                with urlopen(request, timeout=12) as response:
-                    return response.status < 400
-            except HTTPError as error:
-                return error.code in {401, 403, 405, 429}
-            except (URLError, TimeoutError, ValueError):
-                return False
-
-        with ThreadPoolExecutor(max_workers=min(5, len(urls))) as executor:
-            return all(executor.map(exists, urls))
 
     @staticmethod
     def _validate_input(project: dict[str, Any], form_data: dict[str, Any]) -> None:

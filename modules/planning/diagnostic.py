@@ -158,6 +158,12 @@ def render_diagnostic(
     filename = st.session_state.get(f"{prefix}_filename")
     if word_data and filename:
         st.success("Documento Word listo. Puedes editar el formulario y regenerarlo.")
+        st.warning(
+            "Antes de publicar o entregar el documento, verifica manualmente la "
+            "existencia, vigencia y correspondencia de todas las fuentes y enlaces. "
+            "Este aviso se muestra solo en la aplicación y no se incluye en el Word.",
+            icon=":material/fact_check:",
+        )
         st.download_button(
             "Descargar Diagnóstico / Estado del Arte",
             data=word_data,
