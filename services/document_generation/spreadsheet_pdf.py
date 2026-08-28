@@ -17,17 +17,21 @@ class SpreadsheetPdfError(RuntimeError):
 _SPREADSHEET_LOCK = threading.Lock()
 
 
-def convert_xlsx_to_pdf(xlsx_path: Path, pdf_path: Path) -> None:
+def convert_xlsx_to_pdf(
+    xlsx_path: Path,
+    pdf_path: Path,
+    sheet_name: str = "GCDTP-F-019",
+) -> None:
     with _SPREADSHEET_LOCK:
         if platform.system() == "Windows":
-            _convert_with_excel(xlsx_path, pdf_path)
+            _convert_with_excel(xlsx_path, pdf_path, sheet_name)
         else:
             _convert_with_libreoffice(xlsx_path, pdf_path)
     if not pdf_path.is_file() or pdf_path.stat().st_size == 0:
         raise SpreadsheetPdfError("No se produjo el archivo PDF esperado.")
 
 
-def _convert_with_excel(xlsx_path: Path, pdf_path: Path) -> None:
+def _convert_with_excel(xlsx_path: Path, pdf_path: Path, sheet_name: str) -> None:
     try:
         import pythoncom
         import win32com.client
@@ -44,7 +48,7 @@ def _convert_with_excel(xlsx_path: Path, pdf_path: Path) -> None:
         excel.Visible = False
         excel.DisplayAlerts = False
         workbook = excel.Workbooks.Open(str(xlsx_path.resolve()), ReadOnly=True)
-        worksheet = workbook.Worksheets("GCDTP-F-019")
+        worksheet = workbook.Worksheets(sheet_name)
         worksheet.PageSetup.Orientation = 2
         worksheet.PageSetup.Zoom = False
         worksheet.PageSetup.FitToPagesWide = 1

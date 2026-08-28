@@ -26,6 +26,11 @@ INFRASTRUCTURE_TEMPLATE = (
 TECHNOLOGY_BASE_PROJECT_TEMPLATE = (
     RESOURCES_DIR / "templates" / "GCDTP-F-019_V01_Proyecto_base_tecnologica.xlsx"
 )
+WORK_PLAN_TEMPLATE = (
+    RESOURCES_DIR
+    / "templates"
+    / "GCDTP-F-021_V01_Plan_trabajo_proyecto_base_tecnologica.xlsx"
+)
 FIXED_SIGNATURES_DIR = RESOURCES_DIR / "firmas"
 
 DOCUMENT_TYPES = ("CC", "TI", "NIT")
