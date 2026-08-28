@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 import warnings
+from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from functools import lru_cache
@@ -92,6 +93,8 @@ class WorkPlanService:
         4: ("4.1", "4.2", "4.3", "4.4", "4.5", "4.6"),
     }
     PHASE_WEIGHTS = (0.05, 0.05, 0.80, 0.10)
+    MIN_PHASE_LENGTHS = (2, 3, 3, 2)
+    MAX_DAILY_ACTIVITIES = 3
     START_CODES = {"1.1", "2.1", "3.1", "4.1"}
     FINAL_CODES = {"1.4", "2.8", "3.7", "4.5"}
     CLOSING_PAIRS = {
@@ -197,8 +200,12 @@ class WorkPlanService:
             raise WorkPlanError("El proyecto no tiene fecha de cierre.")
         if end_date < start_date:
             raise WorkPlanError("La fecha de cierre no puede ser anterior a la fecha de inicio.")
-        if (end_date - start_date).days + 1 < 4:
-            raise WorkPlanError("El proyecto debe disponer de al menos cuatro dias para sus cuatro fases.")
+        minimum_days = sum(self.MIN_PHASE_LENGTHS)
+        if (end_date - start_date).days + 1 < minimum_days:
+            raise WorkPlanError(
+                f"El proyecto debe disponer de al menos {minimum_days} dias para distribuir "
+                "las actividades sin superar tres actividades por dia."
+            )
         talents = project.get("talents", [])
         talent = next((item for item in talents if item.get("role") == "ejecutor"), None)
         if talent is None:
@@ -236,6 +243,19 @@ class WorkPlanService:
             left, right = by_code[first], by_code[second]
             if left.start_date != right.start_date or left.end_date != right.end_date:
                 raise WorkPlanError(f"Las actividades {first} y {second} deben compartir fecha.")
+        current_date = project_start
+        while current_date <= project_end:
+            active = [
+                item.code
+                for item in schedule
+                if item.start_date <= current_date <= item.end_date
+            ]
+            if len(active) > self.MAX_DAILY_ACTIVITIES:
+                raise WorkPlanError(
+                    f"El {current_date:%d/%m/%Y} tiene mas de tres actividades: "
+                    + ", ".join(active)
+                )
+            current_date += timedelta(days=1)
         phase_limits = []
         for phase in self.PHASE_CODES:
             items = [item for item in schedule if item.phase == phase]
@@ -273,6 +293,12 @@ class WorkPlanService:
             classification = str(sheet.Range("A8").Value or "Publica").strip()
             sheet.Range("A8").Value = f"{classification}  X"
             sheet.Range("C11").Value = project.get("name") or "N.A."
+            project_name_range = sheet.Range("C11:H12")
+            project_name_range.WrapText = True
+            project_name_range.ShrinkToFit = False
+            project_name_range.HorizontalAlignment = -4131
+            project_name_range.VerticalAlignment = -4108
+            project_name_range.Font.Size = 9
             sheet.Range("R11").Value = project.get("code") or "N.A."
             sheet.Range("R12").Value = f"TRL {project.get('target_trl')}"
             assigned_name = self.short_name(talent.get("name"))
@@ -348,6 +374,10 @@ class WorkPlanService:
 
         sheet["A8"] = f"{str(sheet['A8'].value or 'Publica').strip()}  X"
         sheet["C11"] = project.get("name") or "N.A."
+        sheet["C11"].alignment = Alignment(
+            horizontal="left", vertical="center", wrap_text=True, shrink_to_fit=False
+        )
+        sheet["C11"].font = copy(sheet["C11"].font, size=9)
         sheet["R11"] = project.get("code") or "N.A."
         sheet["R12"] = f"TRL {project.get('target_trl')}"
         assigned_name = self.short_name(talent.get("name"))
@@ -417,33 +447,63 @@ class WorkPlanService:
     ) -> list[ScheduledActivity]:
         if not codes:
             return []
-        interior_start = phase_start + timedelta(days=1)
-        interior_days = max(0, (phase_end - phase_start).days - 1)
-        result: list[ScheduledActivity] = []
-        if interior_days >= len(codes):
-            lengths = self._equal_lengths(interior_days, len(codes))
-            cursor = interior_start
-            for code, length in zip(codes, lengths):
-                end = cursor + timedelta(days=length - 1)
-                result.append(self._activity(code, descriptions, phase, "Desarrollo", cursor, end))
-                cursor = end + timedelta(days=1)
-            return result
+        day_count = (phase_end - phase_start).days + 1
+        capacity = [self.MAX_DAILY_ACTIVITIES] * day_count
+        capacity[0] -= 1  # actividad de inicio de fase
+        capacity[-1] -= 2  # pareja de cierre de fase
+        slots = [index for index, available in enumerate(capacity) for _ in range(available)]
+        if len(slots) < len(codes):
+            raise WorkPlanError(
+                f"La fase {phase} no tiene capacidad para limitar el cronograma a tres actividades por dia."
+            )
 
-        if interior_days == 0:
-            dates = [phase_start] * len(codes)
-        elif len(codes) == 1:
-            dates = [interior_start]
+        if len(codes) == 1:
+            selected = [slots[len(slots) // 2]]
         else:
-            dates = [
-                interior_start
-                + timedelta(days=round(index * (interior_days - 1) / (len(codes) - 1)))
+            selected = [
+                slots[round(index * (len(slots) - 1) / (len(codes) - 1))]
                 for index in range(len(codes))
             ]
-        return [
-            self._activity(code, descriptions, phase, "Desarrollo", assigned, assigned)
-            for code, assigned in zip(codes, dates)
-        ]
+        occupancy = [0] * day_count
+        occupancy[0] = 1
+        occupancy[-1] += 2
+        intervals = [[day_index, day_index] for day_index in selected]
+        for day_index in selected:
+            occupancy[day_index] += 1
 
+        center = (len(intervals) - 1) / 2
+        expansion_order = sorted(
+            range(len(intervals)), key=lambda index: (abs(index - center), index)
+        )
+        changed = True
+        while changed:
+            changed = False
+            for index in expansion_order:
+                left, right = intervals[index]
+                candidates = [
+                    day_index
+                    for day_index in (right + 1, left - 1)
+                    if 0 <= day_index < day_count
+                    and occupancy[day_index] < self.MAX_DAILY_ACTIVITIES
+                ]
+                if candidates:
+                    candidate = min(candidates, key=lambda day_index: occupancy[day_index])
+                    intervals[index][0] = min(left, candidate)
+                    intervals[index][1] = max(right, candidate)
+                    occupancy[candidate] += 1
+                    changed = True
+
+        return [
+            self._activity(
+                code,
+                descriptions,
+                phase,
+                "Desarrollo",
+                phase_start + timedelta(days=interval[0]),
+                phase_start + timedelta(days=interval[1]),
+            )
+            for code, interval in zip(codes, intervals)
+        ]
     def _activity(
         self,
         code: str,
@@ -465,22 +525,25 @@ class WorkPlanService:
 
     def _allocate_phase_lengths(self, total_days: int) -> list[int]:
         raw = [total_days * weight for weight in self.PHASE_WEIGHTS]
-        lengths = [max(1, math.floor(value)) for value in raw]
+        lengths = [
+            max(minimum, math.floor(value))
+            for value, minimum in zip(raw, self.MIN_PHASE_LENGTHS)
+        ]
         while sum(lengths) < total_days:
             index = max(range(4), key=lambda item: raw[item] - lengths[item])
             lengths[index] += 1
         while sum(lengths) > total_days:
-            candidates = [index for index, value in enumerate(lengths) if value > 1]
+            candidates = [
+                index
+                for index, value in enumerate(lengths)
+                if value > self.MIN_PHASE_LENGTHS[index]
+            ]
             if not candidates:
                 raise WorkPlanError("No es posible distribuir las cuatro fases en el periodo indicado.")
             index = max(candidates, key=lambda item: lengths[item] - raw[item])
             lengths[index] -= 1
         return lengths
 
-    @staticmethod
-    def _equal_lengths(total: int, count: int) -> list[int]:
-        quotient, remainder = divmod(total, count)
-        return [quotient + (1 if index < remainder else 0) for index in range(count)]
 
     @staticmethod
     def _day_numbers(start_date: date, end_date: date) -> set[int]:
