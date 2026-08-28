@@ -10,6 +10,9 @@ from services.project_service import ProjectService
 from ui.components import metric_card
 
 
+def _navigate(page: str) -> None:
+    st.session_state.current_page = page
+
 def render_dashboard(project_service: ProjectService) -> None:
     project = project_service.get_active_project()
     st.title("Dashboard")
@@ -21,9 +24,12 @@ def render_dashboard(project_service: ProjectService) -> None:
             '<p>Los documentos y su avance estarán siempre asociados al proyecto activo.</p></div>',
             unsafe_allow_html=True,
         )
-        if st.button("Crear nuevo proyecto", type="primary"):
-            st.session_state.current_page = "create_project"
-            st.rerun()
+        st.button(
+            "Crear nuevo proyecto",
+            type="primary",
+            on_click=_navigate,
+            args=("create_project",),
+        )
         return
 
     confidentiality_generated = ConfidentialityService.output_path(project).is_file()
@@ -57,9 +63,12 @@ def render_dashboard(project_service: ProjectService) -> None:
         with column:
             metric_card(*value)
 
-    if st.button("Editar información del proyecto", type="primary"):
-        st.session_state.current_page = "edit_project"
-        st.rerun()
+    st.button(
+        "Editar información del proyecto",
+        type="primary",
+        on_click=_navigate,
+        args=("edit_project",),
+    )
 
     st.subheader("Estado documental")
     for document_name, document_state in document_states:
@@ -79,23 +88,21 @@ def render_dashboard(project_service: ProjectService) -> None:
                     if documents
                     else "Documentos próximamente"
                 )
-                if st.button(
+                st.button(
                     "Abrir fase",
                     key=f"dashboard-phase-{phase_id}",
                     icon=":material/arrow_forward:",
                     width="stretch",
-                ):
-                    st.session_state.current_page = f"phase:{phase_id}"
-                    st.rerun()
+                    on_click=_navigate,
+                    args=(f"phase:{phase_id}",),
+                )
                 for document_id, document_name in documents.items():
-                    if st.button(
+                    st.button(
                         document_name,
                         key=f"dashboard-document-{phase_id}-{document_id}",
                         icon=":material/description:",
                         type="tertiary",
                         width="stretch",
-                    ):
-                        st.session_state.current_page = (
-                            f"document:{phase_id}:{document_id}"
-                        )
-                        st.rerun()
+                        on_click=_navigate,
+                        args=(f"document:{phase_id}:{document_id}",),
+                    )

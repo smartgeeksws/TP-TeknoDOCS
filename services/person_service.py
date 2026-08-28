@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
 import mysql.connector
+import streamlit as st
 
 from config.settings import DATA_DIR, SIGNATURES_DIR
 from services.database import DatabaseError, database_connection
@@ -21,11 +23,20 @@ PERSON_TABLES = {
 class PersonService:
     """Consulta personas y las resuelve dentro de transacciones de proyecto."""
 
+    CACHE_SECONDS = 300
+
     def __init__(self) -> None:
         SIGNATURES_DIR.mkdir(parents=True, exist_ok=True)
 
     def list_people(self, person_type: str) -> list[dict[str, Any]]:
         table = self._table_for(person_type)
+        cache_key = f"people_cache_{person_type}"
+        time_key = f"people_cache_time_{person_type}"
+        cached = st.session_state.get(cache_key)
+        cached_at = st.session_state.get(time_key, 0.0)
+        if cached is not None and monotonic() - cached_at < self.CACHE_SECONDS:
+            return cached
+
         try:
             with database_connection() as connection:
                 cursor = connection.cursor(dictionary=True, buffered=True)
@@ -51,7 +62,16 @@ class PersonService:
 
         for person in people:
             person["person_type"] = person_type
+        st.session_state[cache_key] = people
+        st.session_state[time_key] = monotonic()
         return people
+
+    @staticmethod
+    def invalidate_cache(person_type: str | None = None) -> None:
+        person_types = (person_type,) if person_type else tuple(PERSON_TABLES)
+        for current_type in person_types:
+            st.session_state.pop(f"people_cache_{current_type}", None)
+            st.session_state.pop(f"people_cache_time_{current_type}", None)
 
     def resolve_person(
         self,
@@ -110,6 +130,7 @@ class PersonService:
                     (data["email"].strip(), person["id"]),
                 )
                 person["email"] = data["email"].strip()
+                self.invalidate_cache(person_type)
             person["person_type"] = person_type
             return person
 
@@ -137,6 +158,7 @@ class PersonService:
                 signature_path,
             ),
         )
+        self.invalidate_cache(person_type)
         return {
             "id": cursor.lastrowid,
             "person_type": person_type,
@@ -187,6 +209,7 @@ class PersonService:
                 person_id,
             ),
         )
+        self.invalidate_cache(person_type)
 
     @staticmethod
     def _table_for(person_type: str) -> str:

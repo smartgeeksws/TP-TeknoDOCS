@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from time import monotonic
 from typing import Any
 
 import mysql.connector
+import streamlit as st
 
 from services.database import DatabaseError, database_connection
 
@@ -12,7 +14,14 @@ from services.database import DatabaseError, database_connection
 class CompanyService:
     """Centraliza el registro reutilizable de empresas."""
 
+    CACHE_SECONDS = 300
+
     def list_companies(self) -> list[dict[str, Any]]:
+        cached = st.session_state.get("company_list_cache")
+        cached_at = st.session_state.get("company_list_cache_time", 0.0)
+        if cached is not None and monotonic() - cached_at < self.CACHE_SECONDS:
+            return cached
+
         try:
             with database_connection() as connection:
                 cursor = connection.cursor(dictionary=True, buffered=True)
@@ -26,6 +35,8 @@ class CompanyService:
                 )
                 companies = cursor.fetchall()
                 cursor.close()
+                st.session_state.company_list_cache = companies
+                st.session_state.company_list_cache_time = monotonic()
                 return companies
         except mysql.connector.Error as error:
             raise DatabaseError(
@@ -33,7 +44,12 @@ class CompanyService:
             ) from error
 
     @staticmethod
-    def resolve_company(cursor: Any, assignment: dict[str, Any]) -> dict[str, Any]:
+    def invalidate_cache() -> None:
+        st.session_state.pop("company_list_cache", None)
+        st.session_state.pop("company_list_cache_time", None)
+
+    @classmethod
+    def resolve_company(cls, cursor: Any, assignment: dict[str, Any]) -> dict[str, Any]:
         if assignment["mode"] == "existing":
             cursor.execute(
                 """
@@ -70,6 +86,7 @@ class CompanyService:
             """,
             (nit, data["legal_name"].strip()),
         )
+        cls.invalidate_cache()
         return {
             "id": cursor.lastrowid,
             "nit": nit,

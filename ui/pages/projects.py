@@ -489,6 +489,15 @@ def render_create_project(
         st.rerun()
 
 
+def _open_project(
+    project_service: ProjectService,
+    project: dict[str, Any],
+    page: str,
+) -> None:
+    project_service.set_active_project(project["id"], project)
+    st.session_state.current_page = page
+
+
 def render_projects(project_service: ProjectService) -> None:
     st.title("Mis proyectos")
     st.caption("Selecciona el proyecto sobre el que deseas trabajar.")
@@ -586,26 +595,24 @@ def render_projects(project_service: ProjectService) -> None:
                     f"{', '.join(talent_names) if talent_names else 'Sin talentos'}"
                 )
             with actions:
-                if st.button(
+                st.button(
                     "Proyecto activo" if is_active else "Seleccionar proyecto",
                     key=f"select-project-{project_id}",
                     disabled=is_active,
                     icon=":material/folder_open:",
                     type="primary",
                     width="stretch",
-                ):
-                    project_service.set_active_project(project_id)
-                    st.session_state.current_page = "dashboard"
-                    st.rerun()
-                if st.button(
+                    on_click=_open_project,
+                    args=(project_service, project, "dashboard"),
+                )
+                st.button(
                     "Editar proyecto",
                     key=f"edit-project-{project_id}",
                     icon=":material/edit:",
                     width="stretch",
-                ):
-                    project_service.set_active_project(project_id)
-                    st.session_state.current_page = "edit_project"
-                    st.rerun()
+                    on_click=_open_project,
+                    args=(project_service, project, "edit_project"),
+                )
                 if st.button(
                     "Borrar proyecto",
                     key=f"delete-project-{project_id}",
