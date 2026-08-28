@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -104,20 +105,20 @@ class DiagnosticContentService:
                 f"No fue posible investigar y generar el diagnóstico: {error}"
             ) from error
 
-        for attempt in range(self.MAX_NARRATIVE_REPAIR_ATTEMPTS + 1):
-            invalid_fields = self._invalid_narrative_fields(content)
-            if not invalid_fields:
-                break
-            if attempt >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
+        repair_attempts = 0
+        invalid_fields = self._invalid_narrative_fields(content)
+        while invalid_fields:
+            if repair_attempts >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
                 details = "; ".join(invalid_fields.values())
                 raise DiagnosticContentError(
                     "La IA no logró ajustar las secciones narrativas después de "
                     f"{self.MAX_NARRATIVE_REPAIR_ATTEMPTS} intentos: {details}"
                 )
+            repair_attempts += 1
             self._notify(
                 progress,
                 "Ajustando únicamente las secciones que no cumplen "
-                f"({attempt + 1}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
+                f"({repair_attempts}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
             )
             repaired = self._repair_narrative_fields(
                 client=client,
@@ -127,6 +128,31 @@ class DiagnosticContentService:
                 openai_error=OpenAIError,
             )
             content.update(repaired)
+            invalid_fields = self._invalid_narrative_fields(content)
+
+        self._normalize_objectives(content)
+        invalid_objectives = self._invalid_objectives(content)
+        while invalid_objectives:
+            if repair_attempts >= self.MAX_NARRATIVE_REPAIR_ATTEMPTS:
+                raise DiagnosticContentError(
+                    "La IA no logró formular todos los objetivos con verbo en infinitivo."
+                )
+            repair_attempts += 1
+            self._notify(
+                progress,
+                "Ajustando los objetivos que no cumplen "
+                f"({repair_attempts}/{self.MAX_NARRATIVE_REPAIR_ATTEMPTS})...",
+            )
+            content.update(
+                self._repair_objectives(
+                    client=client,
+                    model=model,
+                    content=content,
+                    openai_error=OpenAIError,
+                )
+            )
+            self._normalize_objectives(content)
+            invalid_objectives = self._invalid_objectives(content)
 
         self._notify(progress, "Validando fuentes, citas y referencias...")
         self._validate_content(content, document_date, form_data)
@@ -204,6 +230,122 @@ class DiagnosticContentService:
             raise DiagnosticContentError(
                 f"No fue posible ajustar las secciones narrativas: {error}"
             ) from error
+
+    def _repair_objectives(
+        self,
+        *,
+        client: Any,
+        model: str,
+        content: dict[str, Any],
+        openai_error: type[Exception],
+    ) -> dict[str, Any]:
+        request = {
+            "model": model,
+            "instructions": (
+                "Reformula los objetivos de un proyecto técnico SENA. Cada objetivo "
+                "debe comenzar directamente con un único verbo en infinitivo terminado "
+                "en -ar, -er o -ir, sin numeración, viñetas, títulos ni prefijos como "
+                "'Objetivo general'. Conserva el sentido técnico, usa entre 3 y 5 "
+                "objetivos específicos medibles y devuelve únicamente el JSON exigido."
+            ),
+            "input": json.dumps(
+                {
+                    "objetivo_general_actual": content.get("general_objective", ""),
+                    "objetivos_especificos_actuales": content.get(
+                        "specific_objectives", []
+                    ),
+                    "problema": content.get("problem_identified", ""),
+                    "solucion": content.get("solution", ""),
+                },
+                ensure_ascii=False,
+            ),
+            "max_output_tokens": 2000,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "objetivos_corregidos",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "general_objective": {
+                                "type": "string",
+                                "minLength": 1,
+                            },
+                            "specific_objectives": {
+                                "type": "array",
+                                "items": {"type": "string", "minLength": 1},
+                                "minItems": 3,
+                                "maxItems": 5,
+                            },
+                        },
+                        "required": [
+                            "general_objective",
+                            "specific_objectives",
+                        ],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                }
+            },
+            "store": False,
+        }
+        try:
+            response = client.responses.create(**request)
+            return json.loads(response.output_text)
+        except (openai_error, json.JSONDecodeError, TypeError, ValueError) as error:
+            raise DiagnosticContentError(
+                f"No fue posible ajustar los objetivos: {error}"
+            ) from error
+
+    @staticmethod
+    def _normalize_objective(value: Any) -> str:
+        normalized = str(value or "").strip().strip("*# ")
+        prefixes = (
+            r"^(?:[-•*]\s*|\d+(?:\.\d+)*[.)-]?\s*)",
+            r"^objetivo(?:\s+(?:general|espec[ií]fico)(?:\s+\d+)?)?\s*[:.\-–]?\s*",
+        )
+        previous = None
+        while normalized != previous:
+            previous = normalized
+            for pattern in prefixes:
+                normalized = re.sub(
+                    pattern,
+                    "",
+                    normalized,
+                    count=1,
+                    flags=re.IGNORECASE,
+                ).strip().strip("*# ")
+        return normalized
+
+    @classmethod
+    def _normalize_objectives(cls, content: dict[str, Any]) -> None:
+        content["general_objective"] = cls._normalize_objective(
+            content.get("general_objective", "")
+        )
+        content["specific_objectives"] = [
+            cls._normalize_objective(objective)
+            for objective in content.get("specific_objectives", [])
+        ]
+
+    @staticmethod
+    def _starts_with_infinitive(value: Any) -> bool:
+        words = str(value or "").strip().split()
+        if not words:
+            return False
+        first_word = re.sub(
+            r"^[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+|[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+$",
+            "",
+            words[0],
+        )
+        return first_word.casefold().endswith(("ar", "er", "ir"))
+
+    @classmethod
+    def _invalid_objectives(cls, content: dict[str, Any]) -> list[str]:
+        values = [
+            content.get("general_objective", ""),
+            *content.get("specific_objectives", []),
+        ]
+        return [str(value) for value in values if not cls._starts_with_infinitive(value)]
 
     @classmethod
     def _schema(cls) -> dict[str, Any]:
@@ -319,7 +461,7 @@ Actúa como investigador y formulador técnico de proyectos SENA. Investiga en l
 
 Redacta en español técnico institucional, tercera persona, sin copiar literalmente las respuestas del usuario, sin frases vacías como «En la actualidad», «Hoy en día», «Es importante destacar» o «Cabe resaltar». Cada afirmación técnica que lo requiera debe contener cita APA 7 y todas las citas deben corresponder exactamente con references y sources. Nunca uses «s.f.» ni «sin fecha»: para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta y año {document_date.year}. Cuenta las palabras antes de responder. Redacta cada campo narrativo con 190–220 palabras y technology_surveillance con 330–420 palabras. Los límites absolutos validados por el sistema son 160–250 y 280–500, respectivamente; no te acerques a esos límites.
 
-Cada sección debe desarrollar un propósito diferente y aportar información nueva. No repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre secciones; tampoco uses referencias como «ver sección anterior», «como se indicó previamente» o equivalentes. Genera un objetivo general breve que comience con verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también en infinitivo y secuencia lógica. Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
+Cada sección debe desarrollar un propósito diferente y aportar información nueva. No repitas párrafos, argumentos, antecedentes, citas ni conclusiones entre secciones; tampoco uses referencias como «ver sección anterior», «como se indicó previamente» o equivalentes. Genera un objetivo general breve que comience directamente con un verbo en infinitivo y entre 3 y 5 objetivos específicos medibles, también iniciados directamente en infinitivo y en secuencia lógica. No antepongas numeraciones, viñetas ni etiquetas como «Objetivo general» u «Objetivo específico». Incluye 2–3 productos similares y 2–3 referentes científicos solo cuando existan; si la investigación arroja menos fuentes verificables, usa únicamente las encontradas. Selecciona 2–3 normas realmente aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas (el sistema las asignará solo si existen fechas del proyecto). Si glossary_requested es falso, devuelve glossary vacío. Si es verdadero, define exclusivamente los términos solicitados con citas verificables. Mantén coherencia problema→impacto→objetivos→solución→tecnologías→cronograma→resultados→conclusiones. No incluyas datos personales ni los inventes.
 """.strip()
 
     @staticmethod
@@ -398,16 +540,8 @@ Compara cada texto con las demás secciones proporcionadas. Cada apartado debe c
                 raise DiagnosticContentError(
                     f"La sección {field} contiene una frase genérica no permitida."
                 )
-        objective_values = [
-            content.get("general_objective", ""),
-            *content.get("specific_objectives", []),
-        ]
-        invalid_objectives = [
-            value
-            for value in objective_values
-            if not str(value).strip().split()
-            or not str(value).strip().split()[0].casefold().endswith(("ar", "er", "ir"))
-        ]
+        self._normalize_objectives(content)
+        invalid_objectives = self._invalid_objectives(content)
         if invalid_objectives:
             raise DiagnosticContentError(
                 "Todos los objetivos deben comenzar con un verbo en infinitivo."
