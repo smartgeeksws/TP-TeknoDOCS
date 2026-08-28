@@ -22,6 +22,9 @@ INFRASTRUCTURE_TEMPLATE = (
     / "templates"
     / "GCDTP-F-018_V01_Uso_infraestructura_y_compromiso.docx"
 )
+TECHNOLOGY_BASE_PROJECT_TEMPLATE = (
+    RESOURCES_DIR / "templates" / "GCDTP-F-019_V01_Proyecto_base_tecnologica.xlsx"
+)
 FIXED_SIGNATURES_DIR = RESOURCES_DIR / "firmas"
 
 DOCUMENT_TYPES = ("CC", "TI", "NIT")
@@ -47,13 +50,18 @@ PHASE_DOCUMENTS = {
         "confidencialidad_compromiso": "Acta de Confidencialidad y Compromiso",
         "uso_infraestructura": "Acta de Uso de Infraestructura",
     },
+    "planeacion": {
+        "proyecto_base_tecnologica": "Proyecto Base Tecnol\u00f3gica",
+        "diagnostico_estado_arte": "Diagn\u00f3stico / Estado del Arte",
+        "plan_trabajo": "Plan de Trabajo",
+    },
 }
 
 PHASES = {
-    "inicio": "Inicio",
-    "ejecucion": "Ejecución",
-    "seguimiento": "Seguimiento",
-    "cierre": "Cierre",
+    "inicio": "Inicio y Legalizaci\u00f3n",
+    "planeacion": "Planeaci\u00f3n Estrat\u00e9gica",
+    "ejecucion": "Ejecuci\u00f3n y Seguimiento",
+    "cierre": "Cierre y Certificaci\u00f3n",
 }
 
 COLORS = {

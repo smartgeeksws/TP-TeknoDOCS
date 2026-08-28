@@ -46,3 +46,30 @@ reutilizarse en proyectos posteriores.
 Esta primera etapa incluye la gestión básica de proyectos, el proyecto activo,
 la navegación por fases y el dashboard visual. Los módulos documentales se
 incorporarán y validarán individualmente en etapas posteriores.
+
+## Proyecto Base Tecnologica
+
+El modulo GCDTP-F-019 esta disponible en `Planeacion Estrategica > Proyecto
+Base Tecnologica`. Recupera los datos del proyecto activo, permite generar y
+editar el contenido tecnico y entrega el PDF solo como descarga. El PDF no se
+guarda en MySQL ni en el sistema de archivos de la aplicacion.
+
+Configura OpenAI en `.streamlit/secrets.toml` o en los secrets de Streamlit
+Cloud:
+
+```toml
+[openai]
+api_key = "TU_API_KEY_OPENAI"
+model = "gpt-5-mini"
+```
+
+Tambien se admiten las variables de entorno `OPENAI_API_KEY` y
+`OPENAI_MODEL`. La llamada se realiza solamente al pulsar **Generar contenido
+con OpenAI** o **Regenerar contenido con OpenAI**.
+
+Para probar:
+
+1. Abre un proyecto con experto, linea tecnologica y niveles TRL registrados.
+2. Ingresa a `Planeacion Estrategica > Proyecto Base Tecnologica`.
+3. Genera el contenido, revisalo y editalo manualmente.
+4. Pulsa `Generar PDF` y descarga el archivo resultante.

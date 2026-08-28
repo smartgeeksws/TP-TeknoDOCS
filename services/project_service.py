@@ -43,6 +43,7 @@ class ProjectService:
                         p.fecha_inicio AS start_date,
                         p.fecha_finalizacion AS end_date,
                         p.linea_tecnologica AS technology_line,
+                        p.grupo_investigacion_propietario_pi AS research_group_name,
                         p.trl_inicial AS initial_trl,
                         p.trl_objetivo AS target_trl,
                         c.id AS company_id,
@@ -360,6 +361,7 @@ class ProjectService:
             "technology_line": row["technology_line"],
             "initial_trl": row["initial_trl"],
             "target_trl": row["target_trl"],
+            "research_group_name": row["research_group_name"],
             "company_id": row["company_id"],
             "company": (
                 {

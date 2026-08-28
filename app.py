@@ -7,6 +7,7 @@ from services.company_service import CompanyService
 from services.database import DatabaseError, initialize_schema
 from services.person_service import PersonService
 from services.project_service import ProjectService
+from modules.planning.technology_base_project import render_technology_base_project
 from modules.start.confidentiality import render_confidentiality_document
 from modules.start.infrastructure import render_infrastructure_document
 from ui.components import project_context
@@ -67,6 +68,8 @@ try:
             render_confidentiality_document(project_service)
         elif document_id == "uso_infraestructura":
             render_infrastructure_document(project_service)
+        elif document_id == "proyecto_base_tecnologica":
+            render_technology_base_project(project_service)
         else:
             render_document_placeholder(phase_id, document_id)
     elif page.startswith("phase:"):

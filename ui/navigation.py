@@ -34,7 +34,7 @@ def render_sidebar(project_service: ProjectService) -> str:
                 _navigate("edit_project")
 
         for phase_id, phase_name in PHASES.items():
-            with st.expander(f"◇  Fase de {phase_name}"):
+            with st.expander(phase_name):
                 documents = PHASE_DOCUMENTS.get(phase_id, {})
                 if documents:
                     for document_id, document_name in documents.items():
