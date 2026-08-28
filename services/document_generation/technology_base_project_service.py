@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
+import textwrap
 import warnings
 from copy import copy
 from pathlib import Path
@@ -250,11 +251,30 @@ class TechnologyBaseProjectService:
     @staticmethod
     def _fit_text_row(sheet: Any, row: int) -> None:
         text = str(sheet.cell(row, 2).value or "")
-        estimated_lines = max(1, sum(max(1, (len(line) + 84) // 85) for line in text.splitlines()))
-        sheet.row_dimensions[row].height = max(
-            sheet.row_dimensions[row].height or 15,
-            15 * (estimated_lines + 1),
+        merged_width = sum(
+            sheet.column_dimensions[column].width or 13
+            for column in ("B", "C", "D", "E", "F")
         )
+        # Excel mide el ancho en unidades aproximadas de caracteres. Se reserva
+        # un 10 % para los margenes internos sin agregar una linea vacia al final.
+        characters_per_line = max(20, int(merged_width * 0.90))
+        estimated_lines = sum(
+            max(
+                1,
+                len(
+                    textwrap.wrap(
+                        paragraph,
+                        width=characters_per_line,
+                        break_long_words=True,
+                        break_on_hyphens=False,
+                    )
+                ),
+            )
+            for paragraph in (text.splitlines() or [""])
+        )
+        font_size = float(sheet.cell(row, 2).font.sz or 11)
+        line_height = font_size * 1.25
+        sheet.row_dimensions[row].height = max(15, estimated_lines * line_height + 2)
 
     @staticmethod
     def _validate(project: dict[str, Any], content: dict[str, str]) -> None:
