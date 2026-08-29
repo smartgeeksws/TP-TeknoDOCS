@@ -99,6 +99,9 @@ class ProjectService:
         if not set(talent_assignments).issubset(allowed_roles):
             raise ValueError("Se recibió un tipo de talento no válido.")
 
+        uploaded_signatures: list[str] = []
+        # Tras iniciar el commit, su resultado puede ser incierto si se corta la red.
+        commit_attempted = False
         try:
             with database_connection() as connection:
                 cursor = connection.cursor(dictionary=True, buffered=True)
@@ -106,6 +109,7 @@ class ProjectService:
                     cursor,
                     "expert",
                     expert_assignment,
+                    uploaded_signatures,
                 )
                 company = self.company_service.resolve_company(
                     cursor, company_assignment
@@ -116,6 +120,7 @@ class ProjectService:
                         cursor,
                         "talent",
                         assignment,
+                        uploaded_signatures,
                     )
                     talents.append(
                         {
@@ -172,16 +177,25 @@ class ProjectService:
                         """,
                         (project_id, talent["id"], talent["role"]),
                     )
-                connection.commit()
                 cursor.close()
+                commit_attempted = True
+                connection.commit()
         except mysql.connector.IntegrityError as error:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
             if error.errno == 1062:
                 raise ValueError(
                     f"Ya existe un proyecto con el código {project_data['code'].strip()}."
                 ) from error
             raise DatabaseError(f"No fue posible relacionar el proyecto: {error}") from error
         except mysql.connector.Error as error:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
             raise DatabaseError(f"No fue posible guardar el proyecto: {error}") from error
+        except Exception:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
+            raise
 
         self.invalidate_project_list_cache()
         self.set_active_project(project_id)
@@ -331,6 +345,11 @@ class ProjectService:
         if not set(talent_ids_by_role).issubset(allowed_roles):
             raise ValueError("Se recibió un tipo de talento no válido.")
 
+        uploaded_signatures: list[str] = []
+        replaced_signatures: list[str] = []
+        # No se eliminan archivos si MySQL pudo confirmar antes de desconectarse.
+        commit_attempted = False
+        committed = False
         try:
             with database_connection() as connection:
                 cursor = connection.cursor()
@@ -340,6 +359,8 @@ class ProjectService:
                         "expert",
                         expert_id,
                         expert_update,
+                        uploaded_signatures,
+                        replaced_signatures,
                     )
                 for talent_id, talent_data in (talent_updates or {}).items():
                     self.person_service.update_person(
@@ -347,6 +368,8 @@ class ProjectService:
                         "talent",
                         talent_id,
                         talent_data,
+                        uploaded_signatures,
+                        replaced_signatures,
                     )
                 cursor.execute(
                     """
@@ -388,9 +411,13 @@ class ProjectService:
                         """,
                         (project_id, talent_id, role),
                     )
-                connection.commit()
                 cursor.close()
+                commit_attempted = True
+                connection.commit()
+                committed = True
         except mysql.connector.IntegrityError as error:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
             if error.errno == 1062:
                 if "uk_proyecto_codigo" in error.msg:
                     message = (
@@ -405,7 +432,17 @@ class ProjectService:
                 raise ValueError(message) from error
             raise DatabaseError(f"No fue posible actualizar las relaciones: {error}") from error
         except mysql.connector.Error as error:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
             raise DatabaseError(f"No fue posible actualizar el proyecto: {error}") from error
+        except Exception:
+            if not commit_attempted:
+                self.person_service.discard_signatures(uploaded_signatures)
+            elif committed:
+                self.person_service.discard_signatures(replaced_signatures)
+            raise
+
+        self.person_service.discard_signatures(replaced_signatures)
 
         self.invalidate_project_list_cache()
         if st.session_state.get("active_project_id") == project_id:

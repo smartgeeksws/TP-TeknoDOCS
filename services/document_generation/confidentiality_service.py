@@ -21,12 +21,12 @@ from config.settings import (
     CONFIDENTIALITY_TEMPLATE,
     FIXED_SIGNATURES_DIR,
     OUTPUT_DIR,
-    ROOT_DIR,
 )
 from services.document_generation.word_pdf import (
     PdfConversionError,
     convert_docx_to_pdf,
 )
+from services.signature_storage import SignatureStorage, SignatureStorageError
 
 MONTHS = {
     1: "enero",
@@ -287,8 +287,13 @@ class ConfidentialityService:
         signature_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         signature_path = signer.get("signature_path")
         if signature_path:
+            image = (
+                str(signature_path)
+                if isinstance(signature_path, Path)
+                else signature_path
+            )
             signature_paragraph.add_run().add_picture(
-                str(signature_path),
+                image,
                 width=Inches(1.65),
             )
         label = signature_cell.add_paragraph("Firma")
@@ -327,19 +332,15 @@ class ConfidentialityService:
         return f"{labels[0]}, {labels[1]} y {labels[2]}"
 
     @staticmethod
-    def _resolve_signature(signature_reference: str | None) -> Path:
+    def _resolve_signature(signature_reference: str | None) -> Any:
         if not signature_reference:
             raise DocumentGenerationError(
                 "Uno de los talentos no tiene firma registrada."
             )
-        path = Path(signature_reference)
-        if not path.is_absolute():
-            path = ROOT_DIR / path
-        if not path.is_file():
-            raise DocumentGenerationError(
-                f"No se encontró la firma del talento: {path.name}."
-            )
-        return path
+        try:
+            return SignatureStorage().open(signature_reference)
+        except SignatureStorageError as error:
+            raise DocumentGenerationError(str(error)) from error
 
     @staticmethod
     def _safe_filename(value: str) -> str:

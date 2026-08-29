@@ -13,9 +13,10 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches
 
-from config.settings import INFRASTRUCTURE_TEMPLATE, OUTPUT_DIR, ROOT_DIR
+from config.settings import INFRASTRUCTURE_TEMPLATE, OUTPUT_DIR
 from services.document_generation.confidentiality_service import DocumentGenerationError
 from services.document_generation.word_pdf import PdfConversionError, convert_docx_to_pdf
+from services.signature_storage import SignatureStorage, SignatureStorageError
 
 
 class InfrastructureService:
@@ -96,13 +97,17 @@ class InfrastructureService:
     def _add_signature(paragraph: Any, signature_reference: str | None) -> None:
         if not signature_reference:
             return
-        signature_path = Path(signature_reference)
-        if not signature_path.is_absolute():
-            signature_path = ROOT_DIR / signature_path
-        if not signature_path.is_file():
-            raise DocumentGenerationError(f"No se encontró la firma registrada: {signature_path.name}.")
+        try:
+            signature_source = SignatureStorage().open(signature_reference)
+        except SignatureStorageError as error:
+            raise DocumentGenerationError(str(error)) from error
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.add_run().add_picture(str(signature_path), width=Inches(1.1))
+        image = (
+            str(signature_source)
+            if isinstance(signature_source, Path)
+            else signature_source
+        )
+        paragraph.add_run().add_picture(image, width=Inches(1.1))
 
     @staticmethod
     def _safe_filename(value: str) -> str:

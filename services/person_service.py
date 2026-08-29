@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import logging
 from time import monotonic
 from typing import Any
-from uuid import uuid4
 
 import mysql.connector
 import streamlit as st
 
-from config.settings import DATA_DIR, SIGNATURES_DIR
 from services.database import DatabaseError, database_connection
+from services.signature_storage import SignatureStorage, SignatureStorageError
 
 
 PERSON_TABLES = {
     "expert": "expertos_tecnoparque",
     "talent": "talentos",
 }
+LOGGER = logging.getLogger(__name__)
 
 
 class PersonService:
@@ -25,8 +25,8 @@ class PersonService:
 
     CACHE_SECONDS = 300
 
-    def __init__(self) -> None:
-        SIGNATURES_DIR.mkdir(parents=True, exist_ok=True)
+    def __init__(self, signature_storage: SignatureStorage | None = None) -> None:
+        self.signature_storage = signature_storage or SignatureStorage()
 
     def list_people(self, person_type: str) -> list[dict[str, Any]]:
         table = self._table_for(person_type)
@@ -78,6 +78,7 @@ class PersonService:
         cursor: Any,
         person_type: str,
         assignment: dict[str, Any],
+        uploaded_signatures: list[str] | None = None,
     ) -> dict[str, Any]:
         """Obtiene una persona existente o la inserta usando el cursor recibido."""
 
@@ -138,6 +139,8 @@ class PersonService:
             data["signature_name"],
             data["signature_data"],
         )
+        if uploaded_signatures is not None:
+            uploaded_signatures.append(signature_path)
         cursor.execute(
             f"""
             INSERT INTO {table} (
@@ -176,16 +179,39 @@ class PersonService:
         person_type: str,
         person_id: int,
         data: dict[str, Any],
+        uploaded_signatures: list[str] | None = None,
+        replaced_signatures: list[str] | None = None,
     ) -> None:
         """Actualiza una persona reutilizable dentro de una transacción externa."""
 
         table = self._table_for(person_type)
-        signature_path = data.get("signature_path")
+        cursor.execute(
+            f"""
+            SELECT firma_ruta
+            FROM {table}
+            WHERE id = %s AND activo = TRUE
+            FOR UPDATE
+            """,
+            (person_id,),
+        )
+        current = cursor.fetchone()
+        if current is None:
+            raise ValueError("La persona seleccionada ya no está disponible.")
+        signature_path = (
+            current.get("firma_ruta")
+            if isinstance(current, dict)
+            else current[0]
+        )
         if data.get("signature_data"):
-            signature_path = self._save_signature(
+            new_signature_path = self._save_signature(
                 data["signature_name"],
                 data["signature_data"],
             )
+            if uploaded_signatures is not None:
+                uploaded_signatures.append(new_signature_path)
+            if signature_path and replaced_signatures is not None:
+                replaced_signatures.append(signature_path)
+            signature_path = new_signature_path
         cursor.execute(
             f"""
             UPDATE {table}
@@ -218,12 +244,14 @@ class PersonService:
         except KeyError as error:
             raise ValueError(f"Tipo de persona no válido: {person_type}.") from error
 
-    @staticmethod
-    def _save_signature(original_name: str, data: bytes) -> str:
-        extension = Path(original_name).suffix.lower()
-        if extension not in {".png", ".jpg", ".jpeg"}:
-            raise ValueError("La firma debe ser una imagen PNG, JPG o JPEG.")
-        filename = f"{uuid4()}{extension}"
-        path = SIGNATURES_DIR / filename
-        path.write_bytes(data)
-        return str(path.relative_to(DATA_DIR.parent))
+    def _save_signature(self, original_name: str, data: bytes) -> str:
+        return self.signature_storage.save(original_name, data)
+
+    def discard_signatures(self, references: list[str]) -> None:
+        """Limpia firmas FTPS sin ocultar el error principal de una operación."""
+
+        for reference in dict.fromkeys(references):
+            try:
+                self.signature_storage.delete(reference)
+            except SignatureStorageError as error:
+                LOGGER.warning("No fue posible limpiar una firma FTPS: %s", error)
