@@ -16,7 +16,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 from docx.text.paragraph import Paragraph
 
 from config.settings import DIAGNOSTIC_TEMPLATE
@@ -29,6 +29,7 @@ class DiagnosticDocumentError(RuntimeError):
 class DiagnosticDocumentService:
     FONT_NAME = "Calibri"
     FONT_SIZE = Pt(12)
+    TABLE_FONT_SIZE = Pt(8)
     REGIONAL = "Regional Huila"
     TRAINING_CENTER = "Centro de Formación Agroindustrial La Angostura"
     TECHNOPARK = "Nodo Angostura"
@@ -123,10 +124,12 @@ class DiagnosticDocumentService:
         schedule_anchor = document.paragraphs[97]
         objective_note = document.paragraphs[48]
         objective_spacing = document.paragraphs[49]
+        references_paragraph = document.paragraphs[103]
         table_captions = [
             document.paragraphs[index]
             for index in self.TABLE_CAPTION_INDICES
         ]
+        bibliographic_references = self._bibliographic_references(content)
 
         for index, (title, style) in self.HEADING_MAP.items():
             paragraph = document.paragraphs[index]
@@ -153,21 +156,26 @@ class DiagnosticDocumentService:
             63: "Los desarrollos comparados se seleccionaron a partir de fuentes verificadas y por su relación técnica directa con el proyecto.",
             69: content["technology_narrative"],
             75: content["technology_surveillance"],
-            78: "Los referentes siguientes sustentan decisiones técnicas, metodológicas y de validación del proyecto.",
+            78: self._scientific_references_intro(
+                content["scientific_references"]
+            ),
             84: content["legal_study"],
             91: content["viability"],
             94: content["expected_results"],
             97: "Las actividades se organizan según la naturaleza técnica del proyecto y el periodo registrado.",
             100: content["conclusions"],
-            103: "\n\n".join(content["references"]),
             106: "El presente documento no cuenta con anexos.",
         }
         for index, text in replacements.items():
             self._replace_paragraph(
                 document.paragraphs[index],
                 text,
-                justify=index not in {45, 54, 78, 97, 103, 106},
+                justify=index not in {45, 54, 78, 97, 106},
             )
+        self._replace_references(
+            references_paragraph,
+            bibliographic_references,
+        )
         self._replace_glossary(
             document.paragraphs[30],
             glossary if form_data.get("glossary_requested") else [],
@@ -186,13 +194,24 @@ class DiagnosticDocumentService:
         self._fill_scientific_references(document.tables[4], content["scientific_references"])
         self._fill_regulations(document.tables[5], content["regulations"])
         self._insert_schedule(document, schedule_anchor, project, content["schedule"])
+        for table_index, table in enumerate(document.tables):
+            table_font_size = self.FONT_SIZE if table_index == 1 else self.TABLE_FONT_SIZE
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        for run in paragraph.runs:
+                            run.font.name = self.FONT_NAME
+                            run.font.size = table_font_size
+                            run_fonts = run._element.get_or_add_rPr().rFonts
+                            run_fonts.set(qn("w:eastAsia"), self.FONT_NAME)
+                            run_fonts.set(qn("w:cs"), self.FONT_NAME)
         self._remove_paragraph(objective_spacing)
         self._remove_paragraph(objective_note)
         self._enable_field_updates(document)
         document.core_properties.title = "GCDTP-F-020 V01 Diagnóstico del proyecto y estado del arte"
         document.core_properties.subject = str(project.get("code") or "")
         document.save(path)
-        self._validate_saved(path)
+        self._validate_saved(path, content)
 
     def _fill_project_table(self, table: Any, project: dict[str, Any], form_data: dict[str, Any]) -> None:
         expert = project.get("expert") or {}
@@ -249,6 +268,92 @@ class DiagnosticDocumentService:
                 for item in values
             ],
         )
+
+    @classmethod
+    def _scientific_references_intro(
+        cls,
+        values: list[dict[str, Any]],
+    ) -> str:
+        titles: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            title = cls._clean_text(
+                item.get("title") or item.get("result")
+            ).rstrip(" .")
+            key = title.casefold()
+            if title and key not in seen:
+                seen.add(key)
+                titles.append(title)
+
+        if not titles:
+            return (
+                "Se encontraron artículos científicos, patentes y/o documentos "
+                "relevantes para el proyecto."
+            )
+        if len(titles) == 1:
+            title_list = f"«{titles[0]}»"
+        else:
+            title_list = "; ".join(f"«{title}»" for title in titles[:-1])
+            title_list += f"; y «{titles[-1]}»"
+        return (
+            "Se encontraron los siguientes artículos científicos, patentes y/o "
+            f"documentos relevantes: {title_list}."
+        )
+
+    @classmethod
+    def _bibliographic_references(
+        cls,
+        content: dict[str, Any],
+    ) -> list[str]:
+        entries: list[tuple[tuple[str, str, str], str]] = []
+        seen: set[str] = set()
+        for source in content.get("sources", []):
+            author = cls._clean_text(source.get("author")) or "Autor no identificado"
+            year = cls._clean_text(source.get("year")) or "s. f."
+            title = cls._clean_text(source.get("title")) or "Fuente sin título"
+            source_type = cls._clean_text(source.get("source_type"))
+            reference = cls._clean_text(source.get("apa_reference"))
+            reference = re.sub(
+                r"(?i)\s*[.;]?\s*Recuperado(?:\s+el\s+[^,.;]+,?)?\s+de\s*:?\s*$",
+                "",
+                reference,
+            ).rstrip(" .")
+            if not reference:
+                reference = f"{author} ({year}). {title}"
+                if source_type:
+                    reference += f". {source_type}"
+
+            url = cls._clean_text(source.get("url"))
+            if url:
+                reference = f"{reference}. Recuperado de {url}"
+
+            identity = url.casefold() or re.sub(
+                r"\W+", "", reference
+            ).casefold()
+            if identity in seen:
+                continue
+            seen.add(identity)
+            entries.append(
+                ((author.casefold(), year.casefold(), title.casefold()), reference)
+            )
+
+        if not entries:
+            for reference_value in content.get("references", []):
+                reference = cls._clean_text(reference_value)
+                identity = re.sub(r"\W+", "", reference).casefold()
+                if reference and identity not in seen:
+                    seen.add(identity)
+                    entries.append(((identity, "", ""), reference))
+
+        references = [
+            reference
+            for _sort_key, reference in sorted(entries, key=lambda item: item[0])
+        ]
+        if not references:
+            raise DiagnosticDocumentError(
+                "No se encontraron fuentes para construir las referencias bibliográficas."
+            )
+        return references
 
     def _insert_schedule(
         self,
@@ -444,6 +549,38 @@ class DiagnosticDocumentService:
             cls._format_run(run)
 
     @classmethod
+    def _replace_references(
+        cls,
+        paragraph: Any,
+        references: list[str],
+    ) -> None:
+        paragraph_properties = (
+            deepcopy(paragraph._p.pPr)
+            if paragraph._p.pPr is not None
+            else None
+        )
+        for child in list(paragraph._p):
+            if child.tag != qn("w:pPr"):
+                paragraph._p.remove(child)
+
+        current = paragraph
+        for index, reference in enumerate(references):
+            if index:
+                element = OxmlElement("w:p")
+                if paragraph_properties is not None:
+                    element.append(deepcopy(paragraph_properties))
+                current._p.addnext(element)
+                current = Paragraph(element, paragraph._parent)
+            current.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            current.paragraph_format.left_indent = Inches(0.5)
+            current.paragraph_format.first_line_indent = Inches(-0.5)
+            current.paragraph_format.line_spacing = 2
+            current.paragraph_format.space_after = Pt(0)
+            current.paragraph_format.keep_together = True
+            run = current.add_run(cls._clean_text(reference))
+            cls._format_run(run)
+
+    @classmethod
     def _format_run(cls, run: Any) -> None:
         run.font.name = cls.FONT_NAME
         run.font.size = cls.FONT_SIZE
@@ -494,7 +631,7 @@ class DiagnosticDocumentService:
         for field in document.element.body.xpath('.//w:fldChar[@w:fldCharType="begin"]'):
             field.set(qn("w:dirty"), "true")
 
-    def _validate_saved(self, path: Path) -> None:
+    def _validate_saved(self, path: Path, content: dict[str, Any]) -> None:
         document = Document(path)
         full_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
         paragraph_texts = {paragraph.text.strip() for paragraph in document.paragraphs}
@@ -517,6 +654,22 @@ class DiagnosticDocumentService:
             raise DiagnosticDocumentError("No se diligenció correctamente el apartado de anexos.")
         if len(document.tables) < 7:
             raise DiagnosticDocumentError("No se generó la tabla de cronograma.")
+        scientific_intro = self._scientific_references_intro(
+            content["scientific_references"]
+        )
+        if scientific_intro not in paragraph_texts:
+            raise DiagnosticDocumentError(
+                "No se incluyeron los títulos de los referentes científicos."
+            )
+        missing_references = [
+            reference
+            for reference in self._bibliographic_references(content)
+            if reference not in paragraph_texts
+        ]
+        if missing_references:
+            raise DiagnosticDocumentError(
+                "No se incluyeron todas las referencias bibliográficas."
+            )
 
     @staticmethod
     def _validate(project: dict[str, Any], form_data: dict[str, Any], content: dict[str, Any]) -> None:

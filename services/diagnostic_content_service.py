@@ -272,7 +272,11 @@ class DiagnosticContentService:
                 "doi": {"type": "string"},
                 "consulted_on": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
                 "sections": {"type": "array", "items": string, "minItems": 1},
-                "apa_reference": string,
+                "apa_reference": {
+                    "type": "string",
+                    "pattern": r"^[\s\S]+$",
+                    "description": "Referencia bibliográfica completa en formato APA 7, sin URL ni la expresión 'Recuperado de'; el sistema agrega la URL canónica.",
+                },
             },
             "required": [
                 "title", "author", "year", "source_type", "url", "doi",
@@ -301,11 +305,12 @@ class DiagnosticContentService:
         reference = {
             "type": "object",
             "properties": {
-                "type": string, "author": string, "year": {"type": "integer"},
+                "title": string, "type": string, "author": string,
+                "year": {"type": "integer"},
                 "result": string, "relationship": string, "country": string,
                 "application": string, "citation": string,
             },
-            "required": ["type", "author", "year", "result", "relationship", "country", "application", "citation"],
+            "required": ["title", "type", "author", "year", "result", "relationship", "country", "application", "citation"],
             "additionalProperties": False,
         }
         regulation = {
@@ -344,7 +349,15 @@ class DiagnosticContentService:
                 "scientific_references": {"type": "array", "items": reference, "minItems": 1, "maxItems": 3},
                 "regulations": {"type": "array", "items": regulation, "minItems": 1, "maxItems": 3},
                 "schedule": {"type": "array", "items": schedule, "minItems": 6, "maxItems": 14},
-                "references": {"type": "array", "items": string, "minItems": 1},
+                "references": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "pattern": r"^[\s\S]+$",
+                        "description": "Referencia bibliográfica en formato APA 7 correspondiente a una fuente citada.",
+                    },
+                    "minItems": 1,
+                },
                 "sources": {"type": "array", "items": source, "minItems": 1},
             }
         )
@@ -368,11 +381,11 @@ Formula objetivos generales, técnicos y metodológicos, adaptados a la naturale
 
 Para similar_products, realiza búsquedas conceptuales amplias: no exijas coincidencia exacta con el producto. Selecciona referentes tecnológicos, metodológicos o funcionales suficientemente relacionados con el problema, el proceso, la función o la tecnología. Incluye obligatoriamente referentes nacionales e internacionales dentro del conjunto. En software considera sistemas de gestión, plataformas institucionales, compras, proveedores, contratación u otras categorías equivalentes según el contexto; en agroindustria, productos, procesos y tecnologías de procesamiento relacionados; en diseño industrial, funciones, prototipos y soluciones técnicas equivalentes. Genera entre 2 y 3 referentes cuando existan fuentes adecuadas.
 
-Para scientific_references, amplía la búsqueda a cualquiera de estos ejes pertinentes: tipo de proyecto, problema, tecnologías, metodologías, arquitecturas, materiales, procesos productivos, técnicas de desarrollo, herramientas o tendencias tecnológicas. En software puede incluir arquitectura, sistemas de información, inteligencia artificial, bases de datos, desarrollo web, automatización, seguridad, experiencia de usuario o las tecnologías específicas declaradas. Elige de 2 a 3 artículos o referentes académicos reales cuando existan.
+Para scientific_references, amplía la búsqueda a cualquiera de estos ejes pertinentes: tipo de proyecto, problema, tecnologías, metodologías, arquitecturas, materiales, procesos productivos, técnicas de desarrollo, herramientas o tendencias tecnológicas. En software puede incluir arquitectura, sistemas de información, inteligencia artificial, bases de datos, desarrollo web, automatización, seguridad, experiencia de usuario o las tecnologías específicas declaradas. Elige de 2 a 3 artículos, patentes o documentos académicos reales cuando existan. En title registra el título o nombre exacto y verificable del artículo, patente o documento, sin traducirlo ni sustituirlo por una descripción del resultado.
 
 La viabilidad debe concluir siempre que el proyecto es viable, con sustento en su descripción, características técnicas, necesidades y recursos disponibles. Identifica el beneficiario principal a partir de la descripción y el contexto (institución, centro, programa, empresa, emprendedor, talento, comunidad, proceso productivo u otro actor realmente mencionado). Explica solo los beneficios directamente coherentes con el proyecto, como optimización, reducción de tiempos o errores, automatización, trazabilidad, productividad, conocimiento, validación, apropiación tecnológica o innovación. No enumeres beneficios no sustentados ni redactes conclusiones negativas, de baja viabilidad o de no recomendación.
 
-Cada afirmación técnica que lo requiera debe contener una cita parentética APA 7 de autor y año, consistente con las fuentes consultadas. En campos narrativos y campos citation no incluyas enlaces Markdown, URL, dominios, parámetros UTM ni marcadores internos de herramientas de búsqueda; registra la URL canónica únicamente en sources[].url. Para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta. Selecciona solo normas aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas. Si glossary_requested es falso, devuelve glossary vacío; si es verdadero, define exclusivamente los términos solicitados. No incluyas datos personales que no sean necesarios ni los inventes. El usuario realizará la revisión final del contenido y las fuentes.
+Cada afirmación técnica que lo requiera debe contener una cita parentética APA 7 de autor y año, consistente con las fuentes consultadas. La cobertura bibliográfica es obligatoria: cada fuente citada en cualquier campo narrativo y en glossary[].citation, similar_products[].citation, scientific_references[].citation o regulations[].citation debe tener una entrada única y correspondiente en sources, aunque la cita aparezca únicamente dentro de una tabla. No omitas fuentes citadas ni agregues referencias sin respaldo verificable. Completa sources[].apa_reference en formato APA 7, ordena references alfabéticamente y asegúrate de que contenga todas las fuentes citadas. No incluyas URL ni la expresión «Recuperado de» en apa_reference o references; el sistema las agrega desde sources[].url. En campos narrativos y campos citation no incluyas enlaces Markdown, URL, dominios, parámetros UTM ni marcadores internos de herramientas de búsqueda; registra la URL canónica únicamente en sources[].url. Para una página institucional sin fecha usa {document_date.isoformat()} como fecha de consulta. Selecciona solo normas aplicables. El cronograma debe adaptarse al tipo real de proyecto y contener fases, actividades y entregables, sin fechas. Si glossary_requested es falso, devuelve glossary vacío; si es verdadero, define exclusivamente los términos solicitados. No incluyas datos personales que no sean necesarios ni los inventes. El usuario realizará la revisión final del contenido y las fuentes.
 """.strip()
 
     @staticmethod
