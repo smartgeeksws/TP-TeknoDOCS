@@ -308,7 +308,7 @@ class DiagnosticDocumentService:
         entries: list[tuple[tuple[str, str, str], str]] = []
         seen: set[str] = set()
         for source in content.get("sources", []):
-            author = cls._clean_text(source.get("author")) or "Autor no identificado"
+            source_author = cls._clean_text(source.get("author"))
             year = cls._clean_text(source.get("year")) or "s. f."
             title = cls._clean_text(source.get("title")) or "Fuente sin título"
             source_type = cls._clean_text(source.get("source_type"))
@@ -319,22 +319,32 @@ class DiagnosticDocumentService:
                 reference,
             ).rstrip(" .")
             if not reference:
-                reference = f"{author} ({year}). {title}"
-                if source_type:
-                    reference += f". {source_type}"
+                if source_author:
+                    reference = f"{source_author} ({year}). {title}"
+                    if source_type:
+                        reference += f". {source_type}"
+                else:
+                    reference = f"{title}. ({year})"
 
-            url = cls._clean_text(source.get("url"))
-            if url:
-                reference = f"{reference}. Recuperado de {url}"
+            doi = cls._clean_text(source.get("doi"))
+            doi = re.sub(r"(?i)^https?://(?:dx\.)?doi\.org/", "", doi)
+            doi = re.sub(r"(?i)^doi:\s*", "", doi).strip()
+            locator = (
+                f"https://doi.org/{doi}"
+                if doi
+                else cls._clean_text(source.get("url"))
+            )
+            if locator:
+                reference = f"{reference}. {locator}"
 
-            identity = url.casefold() or re.sub(
+            identity = locator.casefold() or re.sub(
                 r"\W+", "", reference
             ).casefold()
             if identity in seen:
                 continue
             seen.add(identity)
             entries.append(
-                ((author.casefold(), year.casefold(), title.casefold()), reference)
+                ((source_author.casefold() or title.casefold(), year.casefold(), title.casefold()), reference)
             )
 
         if not entries:
