@@ -49,7 +49,11 @@ class CompanyService:
         st.session_state.pop("company_list_cache_time", None)
 
     @classmethod
-    def resolve_company(cls, cursor: Any, assignment: dict[str, Any]) -> dict[str, Any]:
+    def resolve_company(
+        cls, cursor: Any, assignment: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if assignment["mode"] == "none":
+            return None
         if assignment["mode"] == "existing":
             cursor.execute(
                 """

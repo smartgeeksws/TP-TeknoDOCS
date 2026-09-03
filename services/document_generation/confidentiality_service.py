@@ -73,12 +73,6 @@ FIXED_SIGNERS = [
         "signature": "fcesar.png",
     },
     {
-        "name": "Maria Andrea Qimbaya",
-        "role": "Nombre del Apoyo Administrativo",
-        "document": "C.C. 1003.812.026",
-        "signature": "fmaria.png",
-    },
-    {
         "name": "Lina Marcela Trujillo Osso",
         "role": "SUBDIRECTORA DE CENTRO G02(E)",
         "document": "C.C. 52.701.590",

@@ -313,11 +313,13 @@ def render_create_project(
     companies = company_service.list_companies()
     with st.container(border=True):
         st.subheader("2. Empresa asociada")
-        modes = ["Registrar nueva"]
+        modes = ["No asociar empresa", "Registrar nueva"]
         if companies:
             modes.insert(0, "Buscar existente")
         company_mode = st.radio("C\u00f3mo asociar la empresa", modes, horizontal=True)
-        if company_mode == "Buscar existente":
+        if company_mode == "No asociar empresa":
+            company_assignment = {"mode": "none"}
+        elif company_mode == "Buscar existente":
             company_search = st.text_input(
                 "Buscar por NIT o raz\u00f3n social",
                 placeholder="Escribe todo o parte del dato",
@@ -334,7 +336,7 @@ def render_create_project(
             ]
             companies_by_id = {company["id"]: company for company in matches}
             company_id = st.selectbox(
-                "Empresa *",
+                "Empresa",
                 options=list(companies_by_id),
                 format_func=lambda current_id: (
                     f"{companies_by_id[current_id]['nit']} | "
@@ -347,8 +349,8 @@ def render_create_project(
                 st.info("No se encontraron empresas. Puedes registrar una nueva.")
             company_assignment = {"mode": "existing", "id": company_id}
         else:
-            company_nit = st.text_input("NIT *")
-            company_legal_name = st.text_input("Raz\u00f3n social *")
+            company_nit = st.text_input("NIT")
+            company_legal_name = st.text_input("Raz\u00f3n social")
             company_assignment = {
                 "mode": "new",
                 "data": {
@@ -415,7 +417,7 @@ def render_create_project(
         if company_assignment["mode"] == "existing":
             if company_assignment["id"] is None:
                 errors.append("Debes seleccionar una empresa existente.")
-        else:
+        elif company_assignment["mode"] == "new":
             company_labels = {
                 "nit": "NIT",
                 "legal_name": "raz\u00f3n social",

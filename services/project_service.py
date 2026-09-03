@@ -162,7 +162,7 @@ class ProjectService:
                         project_data["technology_line"],
                         project_data["initial_trl"],
                         project_data["target_trl"],
-                        company["id"],
+                        company["id"] if company else None,
                     ),
                 )
                 project_id = cursor.lastrowid
@@ -211,7 +211,7 @@ class ProjectService:
             "technology_line": project_data["technology_line"],
             "initial_trl": project_data["initial_trl"],
             "target_trl": project_data["target_trl"],
-            "company_id": company["id"],
+            "company_id": company["id"] if company else None,
             "company": company,
             "expert_id": expert["id"],
             "expert": expert,
