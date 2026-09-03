@@ -273,7 +273,7 @@ class AccompanimentRegistryDocumentService:
         page_setup.attrib.update(
             {
                 "paperSize": "1",
-                "orientation": "portrait",
+                "orientation": "landscape",
                 "fitToWidth": "1",
                 "fitToHeight": "0",
                 "horizontalDpi": "300",

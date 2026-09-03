@@ -50,7 +50,7 @@ def _convert_with_excel(xlsx_path: Path, pdf_path: Path, sheet_name: str) -> Non
         workbook = excel.Workbooks.Open(str(xlsx_path.resolve()), ReadOnly=True)
         worksheet = workbook.Worksheets(sheet_name)
         worksheet.PageSetup.PaperSize = 1
-        worksheet.PageSetup.Orientation = 1
+        worksheet.PageSetup.Orientation = 2
         worksheet.PageSetup.Zoom = False
         worksheet.PageSetup.FitToPagesWide = 1
         worksheet.PageSetup.FitToPagesTall = False
