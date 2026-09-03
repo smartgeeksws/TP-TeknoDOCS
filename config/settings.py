@@ -31,6 +31,11 @@ WORK_PLAN_TEMPLATE = (
     / "templates"
     / "GCDTP-F-021_V01_Plan_trabajo_proyecto_base_tecnologica.xlsx"
 )
+ACCOMPANIMENT_REGISTRY_TEMPLATE = (
+    RESOURCES_DIR
+    / "templates"
+    / "GCDTP-F-022_V01_Formato_Registro_acompanamiento.xlsx"
+)
 DIAGNOSTIC_TEMPLATE = (
     RESOURCES_DIR
     / "templates"
@@ -65,6 +70,9 @@ PHASE_DOCUMENTS = {
         "proyecto_base_tecnologica": "Proyecto Base Tecnol\u00f3gica",
         "diagnostico_estado_arte": "Diagn\u00f3stico / Estado del Arte",
         "plan_trabajo": "Plan de Trabajo",
+    },
+    "ejecucion": {
+        "registro_acompanamientos": "Registro de acompa\u00f1amientos",
     },
 }
 

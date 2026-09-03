@@ -96,6 +96,12 @@ try:
             from modules.planning.work_plan import render_work_plan
 
             render_work_plan(project_service)
+        elif document_id == "registro_acompanamientos":
+            from modules.execution_followup.registro_acompanamientos import (
+                render_accompaniment_registry,
+            )
+
+            render_accompaniment_registry(project_service)
         else:
             from ui.pages.phase import render_document_placeholder
 
