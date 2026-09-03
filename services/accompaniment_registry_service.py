@@ -216,7 +216,6 @@ class AccompanimentRegistryService:
 
     def validate_form_data(self, form_data: dict[str, Any]) -> None:
         required = {
-            "document_date": "fecha de elaboracion",
             "meeting_number": "numero de acta o reunion",
             "phase": "fase",
             "phase_start_date": "fecha de inicio de la fase",

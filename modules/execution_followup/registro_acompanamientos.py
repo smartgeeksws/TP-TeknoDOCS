@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -67,7 +66,6 @@ def render_accompaniment_registry(project_service: ProjectService) -> None:
 
 def _initialize_state(prefix: str) -> None:
     defaults = {
-        f"{prefix}_document_date": date.today(),
         f"{prefix}_meeting_number": "",
         f"{prefix}_phase": "Ejecucion",
         f"{prefix}_phase_start_date": date.today(),
@@ -103,11 +101,6 @@ def _render_generator_form(
     logic: AccompanimentRegistryService,
 ) -> None:
     st.subheader("Datos del documento")
-    document_date = st.date_input(
-        "Fecha de elaboracion del documento *",
-        key=f"{prefix}_document_date",
-        format="DD/MM/YYYY",
-    )
     meeting_number = st.text_input(
         "Numero de Acta/Reunion *",
         key=f"{prefix}_meeting_number",
@@ -220,7 +213,6 @@ def _render_generator_form(
         return
 
     form_data = {
-        "document_date": document_date,
         "meeting_number": meeting_number.strip(),
         "phase": phase,
         "phase_start_date": phase_start_date,

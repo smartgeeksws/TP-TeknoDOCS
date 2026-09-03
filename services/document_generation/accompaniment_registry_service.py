@@ -108,9 +108,8 @@ class AccompanimentRegistryDocumentService:
                 "La plantilla GCDTP-F-022 no contiene sheetData."
             )
         rows = sheet_data.findall("a:row", ns)
-        row_18 = next((row for row in rows if row.attrib.get("r") == "18"), None)
         row_19 = next((row for row in rows if row.attrib.get("r") == "19"), None)
-        if row_18 is None or row_19 is None:
+        if row_19 is None:
             raise AccompanimentRegistryDocumentError(
                 "La plantilla no contiene las filas base esperadas."
             )
@@ -156,7 +155,7 @@ class AccompanimentRegistryDocumentService:
         activities = draft["activities"]
         for index, activity in enumerate(activities):
             target_row_number = 18 + index
-            template = deepcopy(row_18 if index == 0 else row_19)
+            template = deepcopy(row_19)
             self._populate_activity_row(
                 template,
                 target_row_number,
