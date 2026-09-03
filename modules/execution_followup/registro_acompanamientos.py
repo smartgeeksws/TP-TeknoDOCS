@@ -102,119 +102,119 @@ def _render_generator_form(
     project: dict[str, Any],
     logic: AccompanimentRegistryService,
 ) -> None:
-    with st.form(f"{prefix}_generator_form"):
-        st.subheader("Datos del documento")
-        document_date = st.date_input(
-            "Fecha de elaboracion del documento *",
-            key=f"{prefix}_document_date",
+    st.subheader("Datos del documento")
+    document_date = st.date_input(
+        "Fecha de elaboracion del documento *",
+        key=f"{prefix}_document_date",
+        format="DD/MM/YYYY",
+    )
+    meeting_number = st.text_input(
+        "Numero de Acta/Reunion *",
+        key=f"{prefix}_meeting_number",
+    )
+    phase = st.selectbox(
+        "Fase a documentar *",
+        options=list(logic.PHASE_OPTIONS),
+        key=f"{prefix}_phase",
+    )
+    columns = st.columns(2)
+    with columns[0]:
+        phase_start_date = st.date_input(
+            "Fecha de inicio de la fase *",
+            key=f"{prefix}_phase_start_date",
             format="DD/MM/YYYY",
         )
-        meeting_number = st.text_input(
-            "Numero de Acta/Reunion *",
-            key=f"{prefix}_meeting_number",
+    with columns[1]:
+        phase_end_date = st.date_input(
+            "Fecha de finalizacion de la fase *",
+            key=f"{prefix}_phase_end_date",
+            format="DD/MM/YYYY",
         )
-        phase = st.selectbox(
-            "Fase a documentar *",
-            options=list(logic.PHASE_OPTIONS),
-            key=f"{prefix}_phase",
-        )
-        columns = st.columns(2)
-        with columns[0]:
-            phase_start_date = st.date_input(
-                "Fecha de inicio de la fase *",
-                key=f"{prefix}_phase_start_date",
-                format="DD/MM/YYYY",
-            )
-        with columns[1]:
-            phase_end_date = st.date_input(
-                "Fecha de finalizacion de la fase *",
-                key=f"{prefix}_phase_end_date",
-                format="DD/MM/YYYY",
-            )
-        worked_weekdays = st.multiselect(
-            "Dias de la semana trabajados *",
-            options=[label for label, _ in logic.WEEKDAY_OPTIONS],
-            key=f"{prefix}_worked_weekdays",
-        )
-        technical_activity_count = st.number_input(
-            "Cantidad de actividades tecnicas a generar *",
-            min_value=1,
+    worked_weekdays = st.multiselect(
+        "Dias de la semana trabajados *",
+        options=[label for label, _ in logic.WEEKDAY_OPTIONS],
+        key=f"{prefix}_worked_weekdays",
+    )
+    technical_activity_count = st.number_input(
+        "Cantidad de actividades tecnicas a generar *",
+        min_value=1,
+        step=1,
+        key=f"{prefix}_technical_activity_count",
+    )
+
+    st.subheader("Equipos o maquinaria especializada")
+    equipment_count = int(
+        st.number_input(
+            "Cantidad de equipos o maquinas a registrar",
+            min_value=0,
             step=1,
-            key=f"{prefix}_technical_activity_count",
+            key=f"{prefix}_equipment_count",
         )
-
-        st.subheader("Equipos o maquinaria especializada")
-        equipment_count = int(
-            st.number_input(
-                "Cantidad de equipos o maquinas a registrar",
-                min_value=0,
-                step=1,
-                key=f"{prefix}_equipment_count",
-            )
-        )
-        equipment_rows = []
-        for index in range(equipment_count):
-            with st.container(border=True):
-                st.caption(f"Equipo {index + 1}")
-                name = st.text_input("Nombre", key=f"{prefix}_equipment_name_{index}")
-                cols = st.columns(2)
-                with cols[0]:
-                    hours = st.number_input(
-                        "Horas totales de uso",
-                        min_value=0.0,
-                        step=1.0,
-                        key=f"{prefix}_equipment_hours_{index}",
-                    )
-                with cols[1]:
-                    wear = st.number_input(
-                        "Valor total de desgaste/uso",
-                        min_value=0.0,
-                        step=1000.0,
-                        key=f"{prefix}_equipment_value_{index}",
-                    )
-                equipment_rows.append(
-                    {"name": name, "hours_total": hours, "value_total": wear}
+    )
+    equipment_rows = []
+    for index in range(equipment_count):
+        with st.container(border=True):
+            st.caption(f"Equipo {index + 1}")
+            name = st.text_input("Nombre", key=f"{prefix}_equipment_name_{index}")
+            cols = st.columns(2)
+            with cols[0]:
+                hours = st.number_input(
+                    "Horas totales de uso",
+                    min_value=0.0,
+                    step=1.0,
+                    key=f"{prefix}_equipment_hours_{index}",
                 )
-
-        st.subheader("Materiales e insumos")
-        material_count = int(
-            st.number_input(
-                "Cantidad de materiales o insumos a registrar",
-                min_value=0,
-                step=1,
-                key=f"{prefix}_material_count",
-            )
-        )
-        material_rows = []
-        for index in range(material_count):
-            with st.container(border=True):
-                st.caption(f"Material {index + 1}")
-                name = st.text_input("Nombre", key=f"{prefix}_material_name_{index}")
-                cols = st.columns(2)
-                with cols[0]:
-                    quantity = st.number_input(
-                        "Cantidad total",
-                        min_value=0.0,
-                        step=1.0,
-                        key=f"{prefix}_material_quantity_{index}",
-                    )
-                with cols[1]:
-                    value = st.number_input(
-                        "Valor total",
-                        min_value=0.0,
-                        step=1000.0,
-                        key=f"{prefix}_material_value_{index}",
-                    )
-                material_rows.append(
-                    {"name": name, "quantity_total": quantity, "value_total": value}
+            with cols[1]:
+                wear = st.number_input(
+                    "Valor total de desgaste/uso",
+                    min_value=0.0,
+                    step=1000.0,
+                    key=f"{prefix}_equipment_value_{index}",
                 )
-
-        with st.container(horizontal=True, horizontal_alignment="right"):
-            regenerate = st.form_submit_button(
-                "Regenerar con IA",
-                type="primary",
-                icon=":material/auto_awesome:",
+            equipment_rows.append(
+                {"name": name, "hours_total": hours, "value_total": wear}
             )
+
+    st.subheader("Materiales e insumos")
+    material_count = int(
+        st.number_input(
+            "Cantidad de materiales o insumos a registrar",
+            min_value=0,
+            step=1,
+            key=f"{prefix}_material_count",
+        )
+    )
+    material_rows = []
+    for index in range(material_count):
+        with st.container(border=True):
+            st.caption(f"Material {index + 1}")
+            name = st.text_input("Nombre", key=f"{prefix}_material_name_{index}")
+            cols = st.columns(2)
+            with cols[0]:
+                quantity = st.number_input(
+                    "Cantidad total",
+                    min_value=0.0,
+                    step=1.0,
+                    key=f"{prefix}_material_quantity_{index}",
+                )
+            with cols[1]:
+                value = st.number_input(
+                    "Valor total",
+                    min_value=0.0,
+                    step=1000.0,
+                    key=f"{prefix}_material_value_{index}",
+                )
+            material_rows.append(
+                {"name": name, "quantity_total": quantity, "value_total": value}
+            )
+
+    with st.container(horizontal=True, horizontal_alignment="right"):
+        regenerate = st.button(
+            "Regenerar con IA",
+            type="primary",
+            icon=":material/auto_awesome:",
+            key=f"{prefix}_regenerate",
+        )
 
     if not regenerate:
         return

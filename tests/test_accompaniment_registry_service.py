@@ -28,8 +28,8 @@ def test_recalculate_assignments_preserves_resource_totals() -> None:
             {
                 "id": "EQ1",
                 "name": "Impresora 3D",
-                "quantity_total": Decimal("6.00"),
-                "value_total": Decimal("18000.00"),
+                "quantity_total": Decimal("32.00"),
+                "value_total": Decimal("96000.00"),
             }
         ],
         "materials": [
@@ -93,10 +93,14 @@ def test_recalculate_assignments_preserves_resource_totals() -> None:
         for share in activity["material_shares"]
     )
 
-    assert total_hours == Decimal("6.00")
-    assert total_wear == Decimal("18000.00")
+    assert total_hours == Decimal("32.00")
+    assert total_wear == Decimal("96000.00")
     assert total_material == Decimal("0.35")
     assert total_material_value == Decimal("32000.00")
+    assert draft["activities"][0]["equipment_shares"][0].quantity == Decimal("16.00")
+    assert draft["activities"][1]["equipment_shares"][0].quantity == Decimal("16.00")
+    assert draft["activities"][0]["equipment_shares"][0].value == Decimal("48000.00")
+    assert draft["activities"][1]["equipment_shares"][0].value == Decimal("48000.00")
 
 
 def test_recalculate_assignments_assigns_material_to_one_activity() -> None:

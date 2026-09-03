@@ -52,14 +52,20 @@ def _convert_with_excel(xlsx_path: Path, pdf_path: Path, sheet_name: str) -> Non
         worksheet.PageSetup.PaperSize = 1
         worksheet.PageSetup.Orientation = 2
         worksheet.PageSetup.Zoom = False
-        worksheet.PageSetup.FitToPagesWide = 1
         worksheet.PageSetup.FitToPagesTall = False
+        worksheet.PageSetup.FitToPagesWide = 1
         worksheet.PageSetup.LeftMargin = excel.InchesToPoints(0.15)
         worksheet.PageSetup.RightMargin = excel.InchesToPoints(0.15)
         worksheet.PageSetup.TopMargin = excel.InchesToPoints(0.3)
         worksheet.PageSetup.BottomMargin = excel.InchesToPoints(0.3)
         worksheet.PageSetup.CenterHorizontally = True
-        workbook.ExportAsFixedFormat(0, str(pdf_path.resolve()))
+        worksheet.PageSetup.PrintArea = worksheet.UsedRange.Address
+        worksheet.ResetAllPageBreaks()
+        worksheet.ExportAsFixedFormat(
+            0,
+            str(pdf_path.resolve()),
+            IgnorePrintAreas=False,
+        )
     except Exception as error:
         raise SpreadsheetPdfError(
             f"No fue posible convertir el documento con Microsoft Excel: {error}"

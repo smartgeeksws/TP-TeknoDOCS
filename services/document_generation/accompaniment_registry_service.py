@@ -251,6 +251,20 @@ class AccompanimentRegistryDocumentService:
         print_titles.text = "'GCDTP-F-022'!$1:$17"
 
     def _configure_print_layout(self, root: ET.Element) -> None:
+        sheet_properties = root.find(f"{{{self.XML_NS}}}sheetPr")
+        if sheet_properties is None:
+            sheet_properties = ET.Element(f"{{{self.XML_NS}}}sheetPr")
+            root.insert(0, sheet_properties)
+        page_setup_properties = sheet_properties.find(
+            f"{{{self.XML_NS}}}pageSetUpPr"
+        )
+        if page_setup_properties is None:
+            page_setup_properties = ET.SubElement(
+                sheet_properties,
+                f"{{{self.XML_NS}}}pageSetUpPr",
+            )
+        page_setup_properties.attrib["fitToPage"] = "1"
+
         page_margins = root.find(f"{{{self.XML_NS}}}pageMargins")
         if page_margins is None:
             page_margins = ET.SubElement(root, f"{{{self.XML_NS}}}pageMargins")

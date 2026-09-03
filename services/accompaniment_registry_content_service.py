@@ -98,7 +98,14 @@ class AccompanimentRegistryContentService:
             "correspondan a transferencia, acompanamiento u orientacion. Cuando un "
             "recurso no aplique, no lo asignes. Un material o insumo solo puede "
             "asignarse a una actividad; usa solo los ids de recursos entregados por "
-            "el sistema."
+            "el sistema. Para cada equipo, asigna su id a todas las actividades "
+            "tecnicas donde realmente se use, no solo a la primera actividad. Si "
+            "un equipo tiene muchas horas de uso, distribuyelo entre varias "
+            "actividades pertinentes cuando el proceso tecnico lo requiera. Las "
+            "horas de uso del equipo no tienen que coincidir con las horas de la "
+            "actividad: una impresora 3D puede acumular 32 horas de uso durante "
+            "actividades registradas de 8 horas. El sistema repartira despues las "
+            "horas y el desgaste del equipo entre las actividades seleccionadas."
         )
         request = {
             "model": model,
@@ -111,7 +118,12 @@ class AccompanimentRegistryContentService:
                         "technical_activity_count": requested,
                     },
                     "equipments": [
-                        {"id": item["id"], "name": item["name"]}
+                        {
+                            "id": item["id"],
+                            "name": item["name"],
+                            "hours_total": str(item["quantity_total"]),
+                            "wear_value_total": str(item["value_total"]),
+                        }
                         for item in equipments
                     ],
                     "materials": [
