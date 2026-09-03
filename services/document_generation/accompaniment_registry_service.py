@@ -25,6 +25,7 @@ class AccompanimentRegistryDocumentError(RuntimeError):
 
 class AccompanimentRegistryDocumentService:
     SHEET_XML_PATH = "xl/worksheets/sheet1.xml"
+    WORKBOOK_XML_PATH = "xl/workbook.xml"
     XML_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     X14_NS = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"
     XM_NS = "http://schemas.microsoft.com/office/excel/2006/main"
@@ -77,10 +78,14 @@ class AccompanimentRegistryDocumentService:
             with zipfile.ZipFile(path, "r") as archive:
                 archive.extractall(extract_path)
             sheet_path = extract_path / self.SHEET_XML_PATH
-            tree = ET.parse(sheet_path)
-            root = tree.getroot()
-            self._replace_sheet_rows(root, project, draft)
-            tree.write(sheet_path, encoding="utf-8", xml_declaration=True)
+            workbook_path = extract_path / self.WORKBOOK_XML_PATH
+            sheet_tree = ET.parse(sheet_path)
+            workbook_tree = ET.parse(workbook_path)
+            sheet_root = sheet_tree.getroot()
+            workbook_root = workbook_tree.getroot()
+            self._replace_sheet_rows(sheet_root, workbook_root, project, draft)
+            sheet_tree.write(sheet_path, encoding="utf-8", xml_declaration=True)
+            workbook_tree.write(workbook_path, encoding="utf-8", xml_declaration=True)
             with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
                 for file_path in extract_path.rglob("*"):
                     if file_path.is_file():
@@ -91,12 +96,13 @@ class AccompanimentRegistryDocumentService:
 
     def _replace_sheet_rows(
         self,
-        root: ET.Element,
+        sheet_root: ET.Element,
+        workbook_root: ET.Element,
         project: dict[str, Any],
         draft: dict[str, Any],
     ) -> None:
         ns = {"a": self.XML_NS, "x14": self.X14_NS, "xm": self.XM_NS}
-        sheet_data = root.find("a:sheetData", ns)
+        sheet_data = sheet_root.find("a:sheetData", ns)
         if sheet_data is None:
             raise AccompanimentRegistryDocumentError(
                 "La plantilla GCDTP-F-022 no contiene sheetData."
@@ -160,9 +166,10 @@ class AccompanimentRegistryDocumentService:
             sheet_data.append(template)
 
         last_row = 17 + len(activities)
-        self._update_dimension(root, last_row)
-        self._update_validations(root, last_row)
-        self._update_print_area(root, last_row)
+        self._update_dimension(sheet_root, last_row)
+        self._update_validations(sheet_root, last_row)
+        self._update_print_area(workbook_root, last_row)
+        self._configure_print_layout(sheet_root)
 
     def _populate_activity_row(
         self,
@@ -243,6 +250,37 @@ class AccompanimentRegistryDocumentService:
             )
         print_titles.text = "'GCDTP-F-022'!$1:$17"
 
+    def _configure_print_layout(self, root: ET.Element) -> None:
+        page_margins = root.find(f"{{{self.XML_NS}}}pageMargins")
+        if page_margins is None:
+            page_margins = ET.SubElement(root, f"{{{self.XML_NS}}}pageMargins")
+        page_margins.attrib.update(
+            {
+                "left": "0.15",
+                "right": "0.15",
+                "top": "0.3",
+                "bottom": "0.3",
+                "header": "0.1",
+                "footer": "0.1",
+            }
+        )
+        page_setup = root.find(f"{{{self.XML_NS}}}pageSetup")
+        if page_setup is None:
+            page_setup = ET.Element(f"{{{self.XML_NS}}}pageSetup")
+            children = list(root)
+            insert_at = children.index(page_margins) + 1
+            root.insert(insert_at, page_setup)
+        page_setup.attrib.update(
+            {
+                "paperSize": "1",
+                "orientation": "portrait",
+                "fitToWidth": "1",
+                "fitToHeight": "0",
+                "horizontalDpi": "300",
+                "verticalDpi": "300",
+            }
+        )
+
     def _cell_by_ref(self, row: ET.Element, reference: str) -> ET.Element:
         for cell in row.findall(f"{{{self.XML_NS}}}c"):
             if cell.attrib.get("r") == reference:
@@ -274,11 +312,16 @@ class AccompanimentRegistryDocumentService:
 
     @staticmethod
     def _estimated_row_height(activity: dict[str, Any]) -> str:
-        text_parts = [
-            activity.get("description", ""),
-            "\n".join(activity.get("equipment_lines", [])),
-            "\n".join(activity.get("material_lines", [])),
-        ]
-        length = max(len(part) for part in text_parts)
-        lines = max(2, min(10, (length // 70) + 2))
-        return str(max(29.25, lines * 14.5))
+        text_parts = (
+            (activity.get("description", ""), 50),
+            ("\n".join(activity.get("equipment_lines", [])), 34),
+            ("\n".join(activity.get("material_lines", [])), 35),
+        )
+        lines = max(
+            2,
+            *(
+                sum(max(1, (len(line) + width - 1) // width) for line in text.splitlines() or [""])
+                for text, width in text_parts
+            ),
+        )
+        return str(max(29.25, lines * 14.5 + 6))

@@ -49,10 +49,16 @@ def _convert_with_excel(xlsx_path: Path, pdf_path: Path, sheet_name: str) -> Non
         excel.DisplayAlerts = False
         workbook = excel.Workbooks.Open(str(xlsx_path.resolve()), ReadOnly=True)
         worksheet = workbook.Worksheets(sheet_name)
-        worksheet.PageSetup.Orientation = 2
+        worksheet.PageSetup.PaperSize = 1
+        worksheet.PageSetup.Orientation = 1
         worksheet.PageSetup.Zoom = False
         worksheet.PageSetup.FitToPagesWide = 1
         worksheet.PageSetup.FitToPagesTall = False
+        worksheet.PageSetup.LeftMargin = excel.InchesToPoints(0.15)
+        worksheet.PageSetup.RightMargin = excel.InchesToPoints(0.15)
+        worksheet.PageSetup.TopMargin = excel.InchesToPoints(0.3)
+        worksheet.PageSetup.BottomMargin = excel.InchesToPoints(0.3)
+        worksheet.PageSetup.CenterHorizontally = True
         workbook.ExportAsFixedFormat(0, str(pdf_path.resolve()))
     except Exception as error:
         raise SpreadsheetPdfError(

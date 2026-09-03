@@ -287,6 +287,7 @@ def _render_preview_editor(
     st.caption(
         "Puedes ajustar tipos, fechas, horas, recursos, descripcion y orden antes de generar el Excel y el PDF."
     )
+    logic.recalculate_assignments(draft)
     equipments = draft["equipments"]
     materials = draft["materials"]
     equipment_options = [item["id"] for item in equipments]
@@ -364,9 +365,21 @@ def _render_preview_editor(
                 format_func=lambda resource_id: equipment_labels[resource_id],
                 key=f"{prefix}_{activity['uid']}_equipments",
             )
+            materials_assigned_elsewhere = {
+                resource_id
+                for other_activity in draft["activities"]
+                if other_activity["uid"] != activity["uid"]
+                for resource_id in other_activity.get("material_ids", [])
+            }
+            available_material_options = [
+                resource_id
+                for resource_id in material_options
+                if resource_id in activity.get("material_ids", [])
+                or resource_id not in materials_assigned_elsewhere
+            ]
             activity["material_ids"] = st.multiselect(
-                "Materiales/insumos asignados",
-                options=material_options,
+                "Materiales/insumos asignados (una sola actividad por material)",
+                options=available_material_options,
                 default=activity.get("material_ids", []),
                 format_func=lambda resource_id: material_labels[resource_id],
                 key=f"{prefix}_{activity['uid']}_materials",

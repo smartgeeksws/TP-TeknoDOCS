@@ -185,16 +185,33 @@ class AccompanimentRegistryService:
                         f"El material {resource['name']} no quedo asignado a ninguna actividad."
                     )
                 continue
-            shares = self._split_decimal(resource["quantity_total"], len(target_indexes), 2)
-            values = self._split_decimal(resource["value_total"], len(target_indexes), 2)
-            for index, quantity, value in zip(target_indexes, shares, values):
-                activity = draft["activities"][index]
-                activity["material_shares"].append(
-                    ResourceShare(id=resource_id, quantity=quantity, value=value)
+            target_index = target_indexes[0]
+            if len(target_indexes) > 1:
+                for duplicate_index in target_indexes[1:]:
+                    duplicate = draft["activities"][duplicate_index]
+                    duplicate["material_ids"] = [
+                        item
+                        for item in duplicate.get("material_ids", [])
+                        if item != resource_id
+                    ]
+                warnings.append(
+                    f"El material {resource['name']} se asigno completo a la primera actividad seleccionada."
                 )
-                activity["material_lines"].append(
-                    self._format_material_line(resource["name"], quantity, value)
+            activity = draft["activities"][target_index]
+            activity["material_shares"].append(
+                ResourceShare(
+                    id=resource_id,
+                    quantity=resource["quantity_total"],
+                    value=resource["value_total"],
                 )
+            )
+            activity["material_lines"].append(
+                self._format_material_line(
+                    resource["name"],
+                    resource["quantity_total"],
+                    resource["value_total"],
+                )
+            )
         draft["warnings"] = warnings
 
     def validate_form_data(self, form_data: dict[str, Any]) -> None:

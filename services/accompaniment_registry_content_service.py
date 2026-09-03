@@ -91,8 +91,14 @@ class AccompanimentRegistryContentService:
             "horas se asignan por fuera del modelo. Los tipos permitidos son "
             "Accion de transferencia, Acompanamiento, Orientaciones, Programa de "
             "fortalecimiento y Otro. Si usas Otro, llena obligatoriamente el campo "
-            "otro con una etiqueta tecnica corta. Cuando un recurso no aplique, no "
-            "lo asignes. Usa solo los ids de recursos entregados por el sistema."
+            "otro con una etiqueta tecnica corta. Para actividades de la fase de "
+            "Ejecucion realizadas directamente por el experto, usa preferentemente "
+            "el tipo Otro y escribe exactamente 'Ejecucion tecnica por el experto' "
+            "en el campo otro. Reserva los demas tipos para actividades que si "
+            "correspondan a transferencia, acompanamiento u orientacion. Cuando un "
+            "recurso no aplique, no lo asignes. Un material o insumo solo puede "
+            "asignarse a una actividad; usa solo los ids de recursos entregados por "
+            "el sistema."
         )
         request = {
             "model": model,
@@ -148,6 +154,7 @@ class AccompanimentRegistryContentService:
     ) -> list[dict[str, Any]]:
         equipment_ids = {item["id"] for item in equipments}
         material_ids = {item["id"] for item in materials}
+        assigned_material_ids: set[str] = set()
         normalized: list[dict[str, Any]] = []
         for index, activity in enumerate(sorted(activities, key=lambda item: item["orden"])):
             activity_type = self._normalize_type(str(activity.get("tipo_acompanamiento", "")))
@@ -165,15 +172,28 @@ class AccompanimentRegistryContentService:
                         for value in activity.get("equipos_ids", [])
                         if value in equipment_ids
                     ],
-                    "material_ids": [
-                        value
-                        for value in activity.get("materiales_ids", [])
-                        if value in material_ids
-                    ],
+                    "material_ids": self._unique_material_ids(
+                        activity.get("materiales_ids", []),
+                        material_ids,
+                        assigned_material_ids,
+                    ),
                     "initial_order": index + 1,
                 }
             )
         return normalized
+
+    @staticmethod
+    def _unique_material_ids(
+        values: list[str],
+        available_ids: set[str],
+        assigned_ids: set[str],
+    ) -> list[str]:
+        selected: list[str] = []
+        for value in values:
+            if value in available_ids and value not in assigned_ids:
+                selected.append(value)
+                assigned_ids.add(value)
+        return selected
 
     def _normalize_type(self, value: str) -> str:
         cleaned = (

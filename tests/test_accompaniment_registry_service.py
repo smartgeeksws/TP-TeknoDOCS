@@ -97,3 +97,30 @@ def test_recalculate_assignments_preserves_resource_totals() -> None:
     assert total_wear == Decimal("18000.00")
     assert total_material == Decimal("0.35")
     assert total_material_value == Decimal("32000.00")
+
+
+def test_recalculate_assignments_assigns_material_to_one_activity() -> None:
+    service = AccompanimentRegistryService()
+    draft = {
+        "equipments": [],
+        "materials": [
+            {
+                "id": "MAT1",
+                "name": "Resina",
+                "quantity_total": Decimal("1.00"),
+                "value_total": Decimal("45000.00"),
+            }
+        ],
+        "activities": [
+            {"uid": "a1", "equipment_ids": [], "material_ids": ["MAT1"]},
+            {"uid": "a2", "equipment_ids": [], "material_ids": ["MAT1"]},
+        ],
+    }
+
+    service.recalculate_assignments(draft)
+
+    assert draft["activities"][0]["material_ids"] == ["MAT1"]
+    assert draft["activities"][1]["material_ids"] == []
+    share = draft["activities"][0]["material_shares"][0]
+    assert share.quantity == Decimal("1.00")
+    assert share.value == Decimal("45000.00")
