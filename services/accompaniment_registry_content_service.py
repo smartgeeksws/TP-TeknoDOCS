@@ -123,7 +123,6 @@ class AccompanimentRegistryContentService:
                     "strict": True,
                 }
             },
-            "temperature": 0.3,
             "store": False,
         }
         try:
