@@ -287,6 +287,10 @@ def _render_preview_editor(
     st.caption(
         "Puedes ajustar tipos, fechas, horas, recursos, descripcion y orden antes de generar el Excel y el PDF."
     )
+    st.caption(
+        "Los equipos pueden seleccionarse en varias actividades y se distribuyen automaticamente. "
+        "Cada material se asigna completo a una unica actividad."
+    )
     logic.recalculate_assignments(draft)
     equipments = draft["equipments"]
     materials = draft["materials"]

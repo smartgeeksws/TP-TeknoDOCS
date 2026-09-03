@@ -95,10 +95,11 @@ class AccompanimentRegistryContentService:
             "Ejecucion realizadas directamente por el experto, usa preferentemente "
             "el tipo Otro y escribe exactamente 'Ejecucion tecnica por el experto' "
             "en el campo otro. Reserva los demas tipos para actividades que si "
-            "correspondan a transferencia, acompanamiento u orientacion. Cuando un "
-            "recurso no aplique, no lo asignes. Un material o insumo solo puede "
-            "asignarse a una actividad; usa solo los ids de recursos entregados por "
-            "el sistema. Para cada equipo, asigna su id a todas las actividades "
+            "correspondan a transferencia, acompanamiento u orientacion. Usa solo "
+            "los ids de recursos entregados por el sistema. Cada material o insumo "
+            "entregado debe asignarse obligatoriamente, completo y una unica vez a "
+            "la actividad tecnica donde sea mas coherente; nunca lo dividas entre "
+            "actividades ni lo omitas. Para cada equipo, asigna su id a todas las actividades "
             "tecnicas donde realmente se use, no solo a la primera actividad. Si "
             "un equipo tiene muchas horas de uso, distribuyelo entre varias "
             "actividades pertinentes cuando el proceso tecnico lo requiera. Las "
@@ -127,7 +128,12 @@ class AccompanimentRegistryContentService:
                         for item in equipments
                     ],
                     "materials": [
-                        {"id": item["id"], "name": item["name"]}
+                        {
+                            "id": item["id"],
+                            "name": item["name"],
+                            "quantity_total": str(item["quantity_total"]),
+                            "value_total": str(item["value_total"]),
+                        }
                         for item in materials
                     ],
                 },
@@ -191,6 +197,18 @@ class AccompanimentRegistryContentService:
                     ),
                     "initial_order": index + 1,
                 }
+            )
+        missing_material_ids = material_ids - assigned_material_ids
+        if missing_material_ids:
+            names = [
+                item["name"]
+                for item in materials
+                if item["id"] in missing_material_ids
+            ]
+            raise ProjectContentError(
+                "OpenAI no asigno estos materiales a una actividad tecnica: "
+                + ", ".join(names)
+                + ". Usa Regenerar con IA para crear una propuesta valida."
             )
         return normalized
 

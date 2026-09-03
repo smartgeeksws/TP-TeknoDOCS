@@ -4,6 +4,10 @@ from decimal import Decimal
 from services.accompaniment_registry_service import (
     AccompanimentRegistryService,
 )
+from services.accompaniment_registry_content_service import (
+    AccompanimentRegistryContentService,
+)
+from services.project_content_service import ProjectContentError
 
 
 def test_generate_dates_reserves_socialization_last_date() -> None:
@@ -128,3 +132,26 @@ def test_recalculate_assignments_assigns_material_to_one_activity() -> None:
     share = draft["activities"][0]["material_shares"][0]
     assert share.quantity == Decimal("1.00")
     assert share.value == Decimal("45000.00")
+
+
+def test_generated_activities_require_every_material_once() -> None:
+    service = AccompanimentRegistryContentService()
+    activities = [
+        {
+            "orden": 1,
+            "titulo": "Diseno tecnico",
+            "descripcion": "Desarrollo de la solucion tecnica del proyecto.",
+            "tipo_acompanamiento": "Otro",
+            "otro": "Ejecucion tecnica por el experto",
+            "equipos_ids": [],
+            "materiales_ids": [],
+        }
+    ]
+    materials = [{"id": "MAT1", "name": "Memoria USB"}]
+
+    try:
+        service._normalize_activities(activities, [], materials)  # noqa: SLF001
+    except ProjectContentError as error:
+        assert "Memoria USB" in str(error)
+    else:
+        raise AssertionError("La actividad sin material debio rechazarse.")
