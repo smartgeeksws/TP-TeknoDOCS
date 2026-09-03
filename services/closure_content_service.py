@@ -19,6 +19,7 @@ class ClosureContentService:
         "estado_arte",
         "metodologia",
         "desarrollo",
+        "normatividad",
         "resultados",
         "analisis_viabilidad",
         "propiedad_transferencia",
@@ -43,23 +44,67 @@ class ClosureContentService:
         "descripcion_consultoria",
         "resultado_trl",
     )
+    REPORT_NARRATIVE_FIELDS = (
+        "introduccion",
+        "planteamiento_problema",
+        "estado_arte",
+        "metodologia",
+        "desarrollo",
+        "normatividad",
+        "resultados",
+        "analisis_viabilidad",
+        "propiedad_transferencia",
+        "impacto",
+        "conclusiones",
+    )
 
     def generate_report(
         self, project: dict[str, Any], form_data: dict[str, Any]
     ) -> dict[str, str]:
-        return self._generate(
+        instructions = (
+            "Redacta un informe tecnico final de un Proyecto de Base Tecnologica "
+            "del SENA, con tono tecnico, verificable y propio de un proceso de "
+            "innovacion, desarrollo tecnologico y validacion de un Producto Minimo "
+            "Viable cuando aplique. Usa solamente los datos suministrados y no "
+            "inventes tecnologias, cifras, pruebas, resultados, entregables, "
+            "certificaciones ni referencias. Redacta entre 220 y 240 palabras en "
+            "cada apartado narrativo: introduccion, planteamiento del problema, "
+            "estado del arte, metodologia, desarrollo, normatividad, resultados, "
+            "analisis de viabilidad, propiedad y transferencia, impacto y "
+            "conclusiones. El objetivo general debe ser una sola oracion precisa; "
+            "los objetivos especificos deben ser una lista separada por saltos de "
+            "linea. En normatividad identifica y explica exclusivamente normas "
+            "colombianas y estandares internacionales pertinentes al tipo de "
+            "proyecto, indicando si su aplicacion es obligatoria o de referencia."
+        )
+        content = self._generate(
             fields=self.REPORT_FIELDS,
             schema_name="informe_tecnico_final",
             project=project,
             extra=form_data,
-            instructions=(
-                "Redacta un informe tecnico final en espanol profesional para SENA. "
-                "Usa solo el contexto recibido y no inventes tecnologias, cifras, "
-                "pruebas, resultados, entregables ni referencias. Mantiene prudencia "
-                "cuando falte evidencia. Los objetivos especificos deben presentarse "
-                "como lista separada por saltos de linea."
-            ),
+            instructions=instructions,
         )
+        invalid = self._report_sections_outside_range(content)
+        if invalid:
+            content = self._generate(
+                fields=self.REPORT_FIELDS,
+                schema_name="informe_tecnico_final_ajustado",
+                project=project,
+                extra=form_data,
+                instructions=(
+                    instructions
+                    + " La respuesta anterior no cumplio la extension en: "
+                    + ", ".join(invalid)
+                    + ". Corrige esos apartados y entrega todos los campos completos."
+                ),
+            )
+        invalid = self._report_sections_outside_range(content)
+        if invalid:
+            raise ProjectContentError(
+                "No fue posible obtener todos los apartados narrativos entre 220 y "
+                "240 palabras. Intenta regenerar el informe."
+            )
+        return content
 
     def generate_canvas(
         self, project: dict[str, Any], form_data: dict[str, Any]
@@ -151,3 +196,10 @@ class ClosureContentService:
         if any(not str(content.get(field, "")).strip() for field in fields):
             raise ProjectContentError("OpenAI no devolvio todos los campos requeridos.")
         return {field: str(content[field]).strip() for field in fields}
+
+    def _report_sections_outside_range(self, content: dict[str, str]) -> list[str]:
+        return [
+            field
+            for field in self.REPORT_NARRATIVE_FIELDS
+            if not 220 <= len(content[field].split()) <= 240
+        ]

@@ -27,6 +27,7 @@ REPORT_LABELS = {
     "estado_arte": "Estado del arte y antecedentes",
     "metodologia": "Metodología",
     "desarrollo": "Desarrollo del proyecto",
+    "normatividad": "Normatividad",
     "resultados": "Resultados",
     "analisis_viabilidad": "Análisis de viabilidad",
     "propiedad_transferencia": "Propiedad intelectual y transferencia",

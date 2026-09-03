@@ -55,6 +55,17 @@ class FinalReportDocumentService:
         "13. Referencias bibliográficas": "referencias",
         "14. Anexos": "anexos",
     }
+    RENAMED_HEADINGS = {
+        "8. Resultados obtenidos": "9. Resultados obtenidos",
+        "9. Análisis de viabilidad": "10. Análisis de viabilidad",
+        "10. Propiedad intelectual y transferencia tecnológica": (
+            "11. Propiedad intelectual y transferencia tecnológica"
+        ),
+        "11. Impacto del proyecto": "12. Impacto del proyecto",
+        "12. Conclusiones": "13. Conclusiones",
+        "13. Referencias bibliográficas": "14. Referencias bibliográficas",
+        "14. Anexos": "15. Anexos",
+    }
 
     def generate(
         self, project: dict[str, Any], form_data: dict[str, Any], content: dict[str, str]
@@ -63,8 +74,11 @@ class FinalReportDocumentService:
             raise ClosureDocumentError("No se encontro la plantilla GCDTP-F-023.")
         document = Document(FINAL_REPORT_TEMPLATE)
         self._fill_identification(document, project, form_data)
+        self._clear_objectives_intro(document)
         for heading, field in self.FIELD_HEADINGS.items():
             self._replace_after_heading(document, heading, content.get(field, ""))
+        self._insert_normativity(document, content.get("normatividad", ""))
+        self._renumber_headings(document)
         self._remove_instructions(document)
         output = BytesIO()
         document.save(output)
@@ -118,6 +132,28 @@ class FinalReportDocumentService:
                 else:
                     self._replace_paragraph(next_paragraph, value)
                 return
+
+    def _clear_objectives_intro(self, document: Document) -> None:
+        self._replace_after_heading(document, "Objetivos", "")
+
+    def _insert_normativity(self, document: Document, value: str) -> None:
+        paragraphs = document.paragraphs
+        for index, paragraph in enumerate(paragraphs[:-1]):
+            if self._normalize(paragraph.text) == self._normalize("7. Desarrollo del proyecto"):
+                heading = document.add_paragraph()
+                paragraphs[index + 1]._p.addnext(heading._p)
+                heading.add_run("8. Normatividad").bold = True
+                body = document.add_paragraph()
+                heading._p.addnext(body._p)
+                self._replace_paragraph(body, value)
+                return
+
+    def _renumber_headings(self, document: Document) -> None:
+        for paragraph in document.paragraphs:
+            for old_heading, new_heading in self.RENAMED_HEADINGS.items():
+                if self._normalize(paragraph.text) == self._normalize(old_heading):
+                    self._replace_paragraph(paragraph, new_heading)
+                    break
 
     @staticmethod
     def _replace_paragraph(paragraph: Any, value: str) -> None:
