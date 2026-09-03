@@ -57,6 +57,23 @@ class ClosureContentService:
         "impacto",
         "conclusiones",
     )
+    REPORT_GROUPS = (
+        (
+            "introduccion",
+            "planteamiento_problema",
+            "objetivo_general",
+            "objetivos_especificos",
+        ),
+        ("estado_arte", "metodologia", "desarrollo"),
+        ("normatividad", "resultados", "analisis_viabilidad"),
+        (
+            "propiedad_transferencia",
+            "impacto",
+            "conclusiones",
+            "referencias",
+            "anexos",
+        ),
+    )
 
     def generate_report(
         self, project: dict[str, Any], form_data: dict[str, Any]
@@ -77,30 +94,39 @@ class ClosureContentService:
             "colombianas y estandares internacionales pertinentes al tipo de "
             "proyecto, indicando si su aplicacion es obligatoria o de referencia."
         )
-        content = self._generate(
-            fields=self.REPORT_FIELDS,
-            schema_name="informe_tecnico_final",
-            project=project,
-            extra=form_data,
-            instructions=instructions,
-            max_output_tokens=8000,
-        )
+        content: dict[str, str] = {}
+        for index, fields in enumerate(self.REPORT_GROUPS, start=1):
+            content.update(
+                self._generate(
+                    fields=fields,
+                    schema_name=f"informe_tecnico_final_parte_{index}",
+                    project=project,
+                    extra=form_data,
+                    instructions=instructions,
+                    max_output_tokens=2800,
+                )
+            )
         invalid = self._report_sections_outside_range(content)
         if invalid:
-            adjusted = self._generate(
-                fields=tuple(invalid),
-                schema_name="apartados_informe_tecnico_final_ajustados",
-                project=project,
-                extra=form_data,
-                instructions=(
-                    instructions
-                    + " Redacta unicamente los apartados fuera de rango: "
-                    + ", ".join(invalid)
-                    + ". Cada uno debe tener estrictamente entre 220 y 240 palabras."
-                ),
-                max_output_tokens=4000,
-            )
-            content.update(adjusted)
+            for index, group in enumerate(self.REPORT_GROUPS, start=1):
+                fields = tuple(field for field in group if field in invalid)
+                if not fields:
+                    continue
+                content.update(
+                    self._generate(
+                        fields=fields,
+                        schema_name=f"apartados_informe_ajustados_{index}",
+                        project=project,
+                        extra=form_data,
+                        instructions=(
+                            instructions
+                            + " Redacta unicamente los apartados fuera de rango: "
+                            + ", ".join(fields)
+                            + ". Cada uno debe tener estrictamente entre 220 y 240 palabras."
+                        ),
+                        max_output_tokens=1800,
+                    )
+                )
         return content
 
     def generate_canvas(
@@ -189,7 +215,12 @@ class ClosureContentService:
             if max_output_tokens:
                 request["max_output_tokens"] = max_output_tokens
             response = OpenAI(api_key=api_key, timeout=60.0).responses.create(**request)
-            content = json.loads(response.output_text)
+            output_text = response.output_text.strip()
+            if not output_text:
+                raise ProjectContentError(
+                    "OpenAI no devolvio contenido para esta parte del informe."
+                )
+            content = json.loads(output_text)
         except (OpenAIError, json.JSONDecodeError, TypeError, ValueError) as error:
             raise ProjectContentError(
                 f"No fue posible generar el contenido con OpenAI: {error}"
