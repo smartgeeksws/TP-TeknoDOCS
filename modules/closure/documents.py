@@ -38,6 +38,26 @@ REPORT_LABELS = {
 }
 
 CANVAS_LABELS = BusinessModelPdfService.LABELS
+METODOLOGIAS_DESARROLLO = [
+    "Metodologías ágiles",
+    "Scrum",
+    "Kanban",
+    "Modelo en cascada",
+    "Modelo espiral",
+    "Design Thinking",
+    "Doble Diamante",
+    "Diseño Centrado en el Usuario (DCU)",
+    "Diseño para Manufactura y Ensamble (DFMA)",
+    "Lean Startup",
+    "Stage-Gate",
+    "Desarrollo iterativo de prototipos",
+    "Ingeniería de sistemas y modelo V",
+    "CRISP-DM para proyectos de datos e inteligencia artificial",
+    "DMAIC / Six Sigma",
+    "Investigación aplicada y validación experimental",
+    "TRIZ para solución inventiva de problemas",
+    "Otra",
+]
 
 
 def render_final_report(project_service: ProjectService) -> None:
@@ -46,16 +66,31 @@ def render_final_report(project_service: ProjectService) -> None:
         return
     prefix = f"closure_report_{project['id']}"
     _project_details(project)
+    methodologies_selected = st.multiselect(
+        "Metodologías utilizadas *",
+        options=METODOLOGIAS_DESARROLLO,
+        key=f"{prefix}_methodologies_selected",
+        placeholder="Selecciona una o más metodologías",
+    )
+    other_methodology = ""
+    if "Otra" in methodologies_selected:
+        other_methodology = st.text_input(
+            "Otra metodología *",
+            key=f"{prefix}_other_methodology",
+            placeholder="Describe la metodología aplicada",
+        )
     with st.form(f"{prefix}_form"):
         achieved = st.text_input("TRL realmente alcanzado *", value=str(project.get("target_trl") or ""), key=f"{prefix}_achieved")
         delivery = st.date_input("Fecha de entrega *", value=_as_date(project.get("end_date")), key=f"{prefix}_delivery", format="DD/MM/YYYY")
-        deliverables = st.text_area("Entregables finales *", key=f"{prefix}_deliverables", height=110)
-        innovation = st.text_area("Innovación desarrollada", key=f"{prefix}_innovation", height=90)
-        methodologies = st.text_area("Metodologías utilizadas *", key=f"{prefix}_methodologies", height=90)
-        activities = st.text_area("Actividades ejecutadas *", key=f"{prefix}_activities", height=110)
-        impacts = st.text_area("Impactos o resultados adicionales", key=f"{prefix}_impacts", height=90)
+        deliverables = st.text_area("Entregables finales *", key=f"{prefix}_deliverables", placeholder="Escribe un entregable por línea: producto, prototipo, componente, documento, sistema o desarrollo obtenido al cierre.", height=130)
+        innovation = st.text_area("Innovación desarrollada", key=f"{prefix}_innovation", placeholder="Explica el elemento diferencial, la mejora frente a alternativas existentes y el aporte técnico o funcional.", height=115)
+        activities = st.text_area("Actividades ejecutadas *", key=f"{prefix}_activities", placeholder="Escribe una actividad por línea. Ejemplo:\n1. Levantamiento de requisitos con los usuarios.\n2. Diseño de la arquitectura de la solución.\n3. Desarrollo e integración de los componentes.\n4. Pruebas, ajustes y validación del prototipo.", height=170)
+        impacts = st.text_area("Impactos o resultados adicionales", key=f"{prefix}_impacts", placeholder="Describe los beneficios, beneficiarios y efectos tecnológicos, sociales, económicos, ambientales o productivos identificados.", height=120)
         generate = st.form_submit_button("Regenerar con IA", type="primary", icon=":material/auto_awesome:")
-    form_data = {"achieved_trl": achieved.strip(), "delivery_date": delivery.isoformat(), "deliverables": deliverables.strip(), "innovation": innovation.strip(), "methodologies": methodologies.strip(), "activities": activities.strip(), "additional_impacts": impacts.strip()}
+    methodologies = [item for item in methodologies_selected if item != "Otra"]
+    if other_methodology.strip():
+        methodologies.append(other_methodology.strip())
+    form_data = {"achieved_trl": achieved.strip(), "delivery_date": delivery.isoformat(), "deliverables": deliverables.strip(), "innovation": innovation.strip(), "methodologies": "; ".join(methodologies), "activities": activities.strip(), "additional_impacts": impacts.strip()}
     if generate:
         if not all(form_data[key] for key in ("achieved_trl", "deliverables", "methodologies", "activities")):
             st.error("Completa los campos requeridos para generar el informe.")

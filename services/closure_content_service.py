@@ -87,25 +87,20 @@ class ClosureContentService:
         )
         invalid = self._report_sections_outside_range(content)
         if invalid:
-            content = self._generate(
-                fields=self.REPORT_FIELDS,
-                schema_name="informe_tecnico_final_ajustado",
+            adjusted = self._generate(
+                fields=tuple(invalid),
+                schema_name="apartados_informe_tecnico_final_ajustados",
                 project=project,
                 extra=form_data,
                 instructions=(
                     instructions
-                    + " La respuesta anterior no cumplio la extension en: "
+                    + " Redacta unicamente los apartados fuera de rango: "
                     + ", ".join(invalid)
-                    + ". Corrige esos apartados y entrega todos los campos completos."
+                    + ". Cada uno debe tener estrictamente entre 220 y 240 palabras."
                 ),
-                max_output_tokens=8000,
+                max_output_tokens=4000,
             )
-        invalid = self._report_sections_outside_range(content)
-        if invalid:
-            raise ProjectContentError(
-                "No fue posible obtener todos los apartados narrativos entre 220 y "
-                "240 palabras. Intenta regenerar el informe."
-            )
+            content.update(adjusted)
         return content
 
     def generate_canvas(
