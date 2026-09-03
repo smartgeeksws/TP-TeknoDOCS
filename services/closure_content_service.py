@@ -72,21 +72,11 @@ class ClosureContentService:
             instructions=(
                 "Redacta los nueve bloques de un Lean Canvas en espanol. Usa solo "
                 "los datos proporcionados y no repitas el nombre ni el codigo del "
-                "proyecto. Cada bloque debe tener entre 150 y 220 palabras, estar "
+                "proyecto. Procura que cada bloque tenga entre 160 y 190 palabras, estar "
                 "orientado a decisiones de negocio y reconocer prudentemente la "
                 "incertidumbre cuando la evidencia sea insuficiente."
             ),
         )
-        invalid = [
-            field
-            for field, value in content.items()
-            if not 150 <= len(value.split()) <= 220
-        ]
-        if invalid:
-            raise ProjectContentError(
-                "OpenAI no devolvio entre 150 y 220 palabras para todos los bloques. "
-                "Intenta regenerar el modelo."
-            )
         return content
 
     def generate_letter_text(

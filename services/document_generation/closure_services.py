@@ -234,17 +234,26 @@ class BusinessModelPdfService:
         title_style = ParagraphStyle("closure-title", parent=styles["Title"], fontSize=16, leading=19, textColor=colors.HexColor("#00304D"), alignment=1)
         section_style = ParagraphStyle("closure-section", parent=styles["Heading2"], fontSize=10, leading=12, textColor=colors.HexColor("#007832"), spaceBefore=6)
         body_style = ParagraphStyle("closure-body", parent=styles["BodyText"], fontSize=8, leading=10)
-        canvas_style = ParagraphStyle("closure-canvas", parent=body_style, fontSize=5.5, leading=6.4)
+        canvas_base_style = ParagraphStyle("closure-canvas", parent=body_style)
         story = [Paragraph("Modelo de Negocio - Lean Canvas", title_style), Spacer(1, 8), Paragraph(f"<b>Proyecto:</b> {escape(str(project.get('name') or 'No registrado'))}", body_style), Spacer(1, 4)]
         for field, label in self.LABELS.items():
             story.extend([Paragraph(label, section_style), Paragraph(escape(content[field]).replace("\n", "<br/>"), body_style)])
         cells = []
         order = list(self.LABELS)
         for field in order:
+            word_count = max(len(content[field].split()), 1)
+            # Shorter blocks use a larger type size while long blocks remain legible.
+            font_size = max(5.5, min(7.2, 1050 / word_count))
+            canvas_style = ParagraphStyle(
+                f"closure-canvas-{field}",
+                parent=canvas_base_style,
+                fontSize=font_size,
+                leading=font_size + 1.1,
+            )
             cells.append(Paragraph(f"<b>{self.LABELS[field]}</b><br/>{escape(content[field]).replace(chr(10), '<br/>')}", canvas_style))
         rows = [cells[0:3], cells[3:6], cells[6:9]]
         table = Table(rows, colWidths=[3.25 * inch] * 3, rowHeights=[2.25 * inch] * 3)
-        table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#00304D")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, -1), colors.white), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 5)]))
+        table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#00304D")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, -1), colors.white), ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
         story.extend([PageBreak(), Paragraph("Lean Canvas", title_style), Spacer(1, 6), table])
         document.build(story)
         return output.getvalue(), f"Modelo_Negocios_{safe_filename(project.get('code', 'proyecto'))}.pdf"
