@@ -102,6 +102,18 @@ try:
             )
 
             render_accompaniment_registry(project_service)
+        elif document_id == "informe_tecnico_final":
+            from modules.closure.documents import render_final_report
+
+            render_final_report(project_service)
+        elif document_id == "modelo_negocio":
+            from modules.closure.documents import render_business_model
+
+            render_business_model(project_service)
+        elif document_id == "carta_certificacion":
+            from modules.closure.documents import render_certification_letter
+
+            render_certification_letter(project_service)
         else:
             from ui.pages.phase import render_document_placeholder
 

@@ -42,6 +42,9 @@ DIAGNOSTIC_TEMPLATE = (
     / "GCDTP-F-020_V01_Diagnostico_proyecto_estado_arte.docx"
 )
 FIXED_SIGNATURES_DIR = RESOURCES_DIR / "firmas"
+FINAL_REPORT_TEMPLATE = (
+    RESOURCES_DIR / "templates" / "GCDTP-F-023_V01_Formato_Informe_Final.docx"
+)
 
 DOCUMENT_TYPES = ("CC", "TI", "NIT")
 TALENT_ROLES = {
@@ -74,6 +77,12 @@ PHASE_DOCUMENTS = {
     "ejecucion": {
         "registro_acompanamientos": "Registro de acompa\u00f1amientos",
     },
+}
+
+PHASE_DOCUMENTS["cierre"] = {
+    "informe_tecnico_final": "Informe T\u00e9cnico Final",
+    "modelo_negocio": "Modelo de Negocio",
+    "carta_certificacion": "Carta de Certificaci\u00f3n",
 }
 
 PHASES = {
