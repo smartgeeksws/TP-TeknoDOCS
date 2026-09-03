@@ -83,6 +83,7 @@ class ClosureContentService:
             project=project,
             extra=form_data,
             instructions=instructions,
+            max_output_tokens=8000,
         )
         invalid = self._report_sections_outside_range(content)
         if invalid:
@@ -97,6 +98,7 @@ class ClosureContentService:
                     + ", ".join(invalid)
                     + ". Corrige esos apartados y entrega todos los campos completos."
                 ),
+                max_output_tokens=8000,
             )
         invalid = self._report_sections_outside_range(content)
         if invalid:
@@ -149,6 +151,7 @@ class ClosureContentService:
         project: dict[str, Any],
         extra: dict[str, Any],
         instructions: str,
+        max_output_tokens: int | None = None,
     ) -> dict[str, str]:
         try:
             from openai import OpenAI, OpenAIError
@@ -173,12 +176,12 @@ class ClosureContentService:
             "datos_adicionales": extra,
         }
         try:
-            response = OpenAI(api_key=api_key, timeout=60.0).responses.create(
-                model=ProjectContentService._setting("OPENAI_MODEL", "model")
+            request = {
+                "model": ProjectContentService._setting("OPENAI_MODEL", "model")
                 or "gpt-5-mini",
-                instructions=instructions,
-                input=json.dumps(payload, ensure_ascii=False),
-                text={
+                "instructions": instructions,
+                "input": json.dumps(payload, ensure_ascii=False),
+                "text": {
                     "format": {
                         "type": "json_schema",
                         "name": schema_name,
@@ -186,8 +189,11 @@ class ClosureContentService:
                         "strict": True,
                     }
                 },
-                store=False,
-            )
+                "store": False,
+            }
+            if max_output_tokens:
+                request["max_output_tokens"] = max_output_tokens
+            response = OpenAI(api_key=api_key, timeout=60.0).responses.create(**request)
             content = json.loads(response.output_text)
         except (OpenAIError, json.JSONDecodeError, TypeError, ValueError) as error:
             raise ProjectContentError(
