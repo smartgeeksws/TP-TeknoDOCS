@@ -37,11 +37,15 @@ def render_dashboard(project_service: ProjectService) -> None:
         st.error(str(error))
         return
     document_states = [
-        (document_name, "Generado" if generation_counts.get(document_id, 0) > 0 else "Pendiente")
+        (
+            document_name,
+            "Generado" if generation_counts.get(document_id, 0) > 0 else "Pendiente",
+            generation_counts.get(document_id, 0),
+        )
         for documents in PHASE_DOCUMENTS.values()
         for document_id, document_name in documents.items()
     ]
-    generated = sum(state == "Generado" for _, state in document_states)
+    generated = sum(state == "Generado" for _, state, _ in document_states)
     pending = len(document_states) - generated
     progress = int((generated / len(document_states)) * 100)
 
@@ -64,9 +68,13 @@ def render_dashboard(project_service: ProjectService) -> None:
     )
 
     st.subheader("Estado documental")
-    for document_name, document_state in document_states:
+    for document_name, document_state, generation_count in document_states:
         icon = "✅" if document_state == "Generado" else "○"
-        st.write(f"{icon} **{document_name}:** {document_state}")
+        times_label = "vez" if generation_count == 1 else "veces"
+        st.write(
+            f"{icon} **{document_name}:** {document_state} "
+            f"· Generado {generation_count} {times_label}"
+        )
 
     st.subheader("Fases y documentos")
     st.caption("Selecciona una fase o abre directamente el documento que deseas generar.")
