@@ -10,6 +10,8 @@ from services.document_generation.technology_base_project_service import (
     TechnologyBaseProjectError,
     TechnologyBaseProjectService,
 )
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_content_service import ProjectContentError, ProjectContentService
 from services.project_service import ProjectService
 
@@ -90,6 +92,12 @@ def render_technology_base_project(project_service: ProjectService) -> None:
             else:
                 st.session_state[f"{prefix}_pdf_v{PDF_LAYOUT_VERSION}"] = pdf_data
                 st.session_state[f"{prefix}_filename_v{PDF_LAYOUT_VERSION}"] = filename
+                try:
+                    DocumentGenerationTracker().record(
+                        project["id"], "proyecto_base_tecnologica"
+                    )
+                except DatabaseError as error:
+                    st.warning(str(error))
 
     pdf_data = st.session_state.get(f"{prefix}_pdf_v{PDF_LAYOUT_VERSION}")
     filename = st.session_state.get(f"{prefix}_filename_v{PDF_LAYOUT_VERSION}")

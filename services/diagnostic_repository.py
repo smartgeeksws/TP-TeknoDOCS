@@ -71,13 +71,15 @@ class DiagnosticRepository:
                         """
                         INSERT INTO documentos_proyecto (
                             proyecto_id, clave_documento, datos_formulario,
-                            contenido_generado, fuentes_json, generado_en
-                        ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                            contenido_generado, fuentes_json, generado_en,
+                            cantidad_generaciones
+                        ) VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, 1)
                         ON DUPLICATE KEY UPDATE
                             datos_formulario = VALUES(datos_formulario),
                             contenido_generado = VALUES(contenido_generado),
                             fuentes_json = VALUES(fuentes_json),
-                            generado_en = CURRENT_TIMESTAMP
+                            generado_en = CURRENT_TIMESTAMP,
+                            cantidad_generaciones = cantidad_generaciones + 1
                         """,
                         (
                             project_id,

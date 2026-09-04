@@ -3,9 +3,8 @@
 import streamlit as st
 
 from config.settings import PHASE_DOCUMENTS, PHASES
-from services.document_generation.confidentiality_service import ConfidentialityService
-from services.document_generation.infrastructure_service import InfrastructureService
-from services.diagnostic_repository import DiagnosticRepository
+from services.database import DatabaseError
+from services.document_generation_tracker import DocumentGenerationTracker
 from services.project_service import ProjectService
 from ui.components import metric_card
 
@@ -32,21 +31,15 @@ def render_dashboard(project_service: ProjectService) -> None:
         )
         return
 
-    confidentiality_generated = ConfidentialityService.output_path(project).is_file()
-    infrastructure_generated = InfrastructureService.output_path(project).is_file()
-    diagnostic_saved = DiagnosticRepository().load(project["id"])
+    try:
+        generation_counts = DocumentGenerationTracker().counts_for_project(project["id"])
+    except DatabaseError as error:
+        st.error(str(error))
+        return
     document_states = [
-        (
-            "Acta de Confidencialidad y Compromiso",
-            "Generado" if confidentiality_generated else "Pendiente",
-        ),
-        ("Acta de Uso de Infraestructura", "Generado" if infrastructure_generated else "Pendiente"),
-        (
-            "Diagnóstico del proyecto y estado del arte",
-            "Generado"
-            if diagnostic_saved and diagnostic_saved.get("content")
-            else "Pendiente",
-        ),
+        (document_name, "Generado" if generation_counts.get(document_id, 0) > 0 else "Pendiente")
+        for documents in PHASE_DOCUMENTS.values()
+        for document_id, document_name in documents.items()
     ]
     generated = sum(state == "Generado" for _, state in document_states)
     pending = len(document_states) - generated
@@ -55,8 +48,8 @@ def render_dashboard(project_service: ProjectService) -> None:
     columns = st.columns(4)
     values = [
         ("Proyecto activo", project["name"], project.get("code") or "Sin código"),
-        ("Documentos generados", str(generated), "Valor inicial"),
-        ("Documentos pendientes", str(pending), "Valor inicial"),
+        ("Documentos generados", str(generated), f"De {len(document_states)} documentos"),
+        ("Documentos pendientes", str(pending), f"De {len(document_states)} documentos"),
         ("Avance documental", f"{progress}%", "Documentación completada"),
     ]
     for column, value in zip(columns, values):

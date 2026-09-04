@@ -171,6 +171,7 @@ def initialize_schema() -> None:
                     contenido_generado LONGTEXT NULL,
                     fuentes_json LONGTEXT NULL,
                     generado_en DATETIME NULL,
+                    cantidad_generaciones INT UNSIGNED NOT NULL DEFAULT 0,
                     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                         ON UPDATE CURRENT_TIMESTAMP,

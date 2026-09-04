@@ -20,6 +20,8 @@ from services.document_generation.accompaniment_registry_service import (
     AccompanimentRegistryDocumentError,
     AccompanimentRegistryDocumentService,
 )
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_content_service import ProjectContentError
 from services.project_service import ProjectService
 
@@ -455,6 +457,12 @@ def _render_generation_actions(
                 st.session_state[f"{prefix}_pdf"] = pdf_bytes
                 st.session_state[f"{prefix}_xlsx_name"] = xlsx_name
                 st.session_state[f"{prefix}_pdf_name"] = pdf_name
+                try:
+                    DocumentGenerationTracker().record(
+                        project["id"], "registro_acompanamientos"
+                    )
+                except DatabaseError as error:
+                    st.warning(str(error))
                 if pdf_bytes:
                     st.success("Excel y PDF generados en memoria.")
                 else:

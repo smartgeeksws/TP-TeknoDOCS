@@ -11,6 +11,8 @@ from services.document_generation.confidentiality_service import (
     ConfidentialityService,
     DocumentGenerationError,
 )
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_service import ProjectService
 
 
@@ -54,6 +56,12 @@ def render_confidentiality_document(project_service: ProjectService) -> None:
         except (DocumentGenerationError, OSError) as error:
             st.error(f"No fue posible generar el documento: {error}")
             return
+        try:
+            DocumentGenerationTracker().record(
+                project["id"], "confidencialidad_compromiso"
+            )
+        except DatabaseError as error:
+            st.warning(str(error))
         encoded_pdf = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
         filename = json.dumps(pdf_path.name)
         components.html(

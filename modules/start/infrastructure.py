@@ -9,6 +9,8 @@ import streamlit.components.v1 as components
 
 from services.document_generation.confidentiality_service import DocumentGenerationError
 from services.document_generation.infrastructure_service import InfrastructureService
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_service import ProjectService
 
 
@@ -42,6 +44,10 @@ def render_infrastructure_document(project_service: ProjectService) -> None:
         except (DocumentGenerationError, OSError) as error:
             st.error(f"No fue posible generar el documento: {error}")
             return
+        try:
+            DocumentGenerationTracker().record(project["id"], "uso_infraestructura")
+        except DatabaseError as error:
+            st.warning(str(error))
         encoded_pdf = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
         filename = json.dumps(pdf_path.name)
         components.html(

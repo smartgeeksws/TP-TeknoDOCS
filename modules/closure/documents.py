@@ -15,6 +15,8 @@ from services.document_generation.closure_services import (
     FinalReportDocumentService,
     format_date,
 )
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_content_service import ProjectContentError
 from services.project_service import ProjectService
 
@@ -106,6 +108,7 @@ def render_final_report(project_service: ProjectService) -> None:
                 st.error(f"No fue posible generar el documento: {error}")
             else:
                 st.session_state[f"{prefix}_file"] = (data, filename)
+                _record_generation(project["id"], "informe_tecnico_final")
         _download(prefix, "Descargar Informe Técnico Final", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
@@ -129,6 +132,8 @@ def render_business_model(project_service: ProjectService) -> None:
                 st.session_state[f"{prefix}_file"] = BusinessModelPdfService().generate(project, edited)
             except ClosureDocumentError as error:
                 st.error(f"No fue posible generar el PDF: {error}")
+            else:
+                _record_generation(project["id"], "modelo_negocio")
         _download(prefix, "Descargar Modelo de Negocio", "application/pdf")
 
 
@@ -165,6 +170,8 @@ def render_certification_letter(project_service: ProjectService) -> None:
                 st.session_state[f"{prefix}_file"] = CertificationLetterDocumentService().generate(values, edited)
             except ClosureDocumentError as error:
                 st.error(f"No fue posible generar la carta: {error}")
+            else:
+                _record_generation(project["id"], "carta_certificacion")
         _download(prefix, "Descargar Carta de Certificación", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
@@ -208,6 +215,13 @@ def _download(prefix: str, label: str, mime: str) -> None:
     file_data = st.session_state.get(f"{prefix}_file")
     if file_data:
         st.download_button(label, data=file_data[0], file_name=file_data[1], mime=mime, type="primary", icon=":material/download:", width="stretch")
+
+
+def _record_generation(project_id: int, document_key: str) -> None:
+    try:
+        DocumentGenerationTracker().record(project_id, document_key)
+    except DatabaseError as error:
+        st.warning(str(error))
 
 
 def _as_date(value: Any) -> date:

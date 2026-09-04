@@ -9,6 +9,8 @@ from services.document_generation.work_plan_service import (
     WorkPlanError,
     WorkPlanService,
 )
+from services.document_generation_tracker import DocumentGenerationTracker
+from services.database import DatabaseError
 from services.project_service import ProjectService
 
 
@@ -90,6 +92,10 @@ def render_work_plan(project_service: ProjectService) -> None:
         else:
             st.session_state[pdf_key] = pdf_data
             st.session_state[filename_key] = filename
+            try:
+                DocumentGenerationTracker().record(project["id"], "plan_trabajo")
+            except DatabaseError as error:
+                st.warning(str(error))
 
     pdf_data = st.session_state.get(pdf_key)
     filename = st.session_state.get(filename_key)

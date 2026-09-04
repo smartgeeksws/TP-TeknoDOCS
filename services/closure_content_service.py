@@ -57,24 +57,6 @@ class ClosureContentService:
         "impacto",
         "conclusiones",
     )
-    REPORT_GROUPS = (
-        (
-            "introduccion",
-            "planteamiento_problema",
-            "objetivo_general",
-            "objetivos_especificos",
-        ),
-        ("estado_arte", "metodologia", "desarrollo"),
-        ("normatividad", "resultados", "analisis_viabilidad"),
-        (
-            "propiedad_transferencia",
-            "impacto",
-            "conclusiones",
-            "referencias",
-            "anexos",
-        ),
-    )
-
     def generate_report(
         self, project: dict[str, Any], form_data: dict[str, Any]
     ) -> dict[str, str]:
@@ -95,36 +77,35 @@ class ClosureContentService:
             "proyecto, indicando si su aplicacion es obligatoria o de referencia."
         )
         content: dict[str, str] = {}
-        for index, fields in enumerate(self.REPORT_GROUPS, start=1):
+        for field in self.REPORT_FIELDS:
             content.update(
                 self._generate(
-                    fields=fields,
-                    schema_name=f"informe_tecnico_final_parte_{index}",
+                    fields=(field,),
+                    schema_name=f"informe_tecnico_final_{field}",
                     project=project,
                     extra=form_data,
-                    instructions=instructions,
-                    max_output_tokens=2800,
+                    instructions=(
+                        instructions
+                        + f" Redacta unicamente el campo {field} en esta respuesta."
+                    ),
+                    max_output_tokens=1200,
                 )
             )
         invalid = self._report_sections_outside_range(content)
         if invalid:
-            for index, group in enumerate(self.REPORT_GROUPS, start=1):
-                fields = tuple(field for field in group if field in invalid)
-                if not fields:
-                    continue
+            for field in invalid:
                 content.update(
                     self._generate(
-                        fields=fields,
-                        schema_name=f"apartados_informe_ajustados_{index}",
+                        fields=(field,),
+                        schema_name=f"apartado_informe_ajustado_{field}",
                         project=project,
                         extra=form_data,
                         instructions=(
                             instructions
-                            + " Redacta unicamente los apartados fuera de rango: "
-                            + ", ".join(fields)
-                            + ". Cada uno debe tener estrictamente entre 220 y 240 palabras."
+                            + f" Redacta unicamente el campo {field}. Debe tener "
+                            "estrictamente entre 220 y 240 palabras."
                         ),
-                        max_output_tokens=1800,
+                        max_output_tokens=1200,
                     )
                 )
         return content
