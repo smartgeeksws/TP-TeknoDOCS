@@ -33,7 +33,6 @@ class ClosureContentService:
         "impacto",
         "conclusiones",
         "referencias",
-        "anexos",
     )
     CANVAS_FIELDS = (
         "propuesta_valor",
@@ -54,9 +53,7 @@ class ClosureContentService:
     REPORT_NARRATIVE_FIELDS = (
         "introduccion",
         "planteamiento_problema",
-        "estado_arte",
         "metodologia",
-        "desarrollo",
         "normatividad",
         "resultados",
         "analisis_viabilidad",
@@ -64,28 +61,14 @@ class ClosureContentService:
         "impacto",
         "conclusiones",
     )
+
     def generate_report(
         self,
         project: dict[str, Any],
         form_data: dict[str, Any],
         progress: ReportProgressCallback | None = None,
     ) -> dict[str, str]:
-        instructions = (
-            "Redacta un informe tecnico final de un Proyecto de Base Tecnologica "
-            "del SENA, con tono tecnico, verificable y propio de un proceso de "
-            "innovacion, desarrollo tecnologico y validacion de un Producto Minimo "
-            "Viable cuando aplique. Usa solamente los datos suministrados y no "
-            "inventes tecnologias, cifras, pruebas, resultados, entregables, "
-            "certificaciones ni referencias. Redacta entre 220 y 240 palabras en "
-            "cada apartado narrativo: introduccion, planteamiento del problema, "
-            "estado del arte, metodologia, desarrollo, normatividad, resultados, "
-            "analisis de viabilidad, propiedad y transferencia, impacto y "
-            "conclusiones. El objetivo general debe ser una sola oracion precisa; "
-            "los objetivos especificos deben ser una lista separada por saltos de "
-            "linea. En normatividad identifica y explica exclusivamente normas "
-            "colombianas y estandares internacionales pertinentes al tipo de "
-            "proyecto, indicando si su aplicacion es obligatoria o de referencia."
-        )
+        instructions = self._report_base_instructions()
         content: dict[str, str] = {}
         total_fields = len(self.REPORT_FIELDS)
         for completed_fields, field in enumerate(self.REPORT_FIELDS):
@@ -95,25 +78,41 @@ class ClosureContentService:
                 completed_fields,
                 total_fields,
             )
-            content.update(
-                self._generate(
-                    fields=(field,),
-                    schema_name=f"informe_tecnico_final_{field}",
-                    project=project,
-                    extra=form_data,
-                    instructions=(
-                        instructions
-                        + f" Redacta unicamente el campo {field} en esta respuesta."
-                    ),
-                    max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
-                    on_retry=lambda: self._notify_report_progress(
-                        progress,
-                        f"Reintentando {self._field_label(field)}...",
-                        completed_fields,
-                        total_fields,
-                    ),
+            if field == "estado_arte":
+                content.update(
+                    self._generate_state_of_art(
+                        project=project,
+                        form_data=form_data,
+                        previous_sections=content,
+                        on_retry=lambda: self._notify_report_progress(
+                            progress,
+                            "Reintentando Estado del arte...",
+                            completed_fields,
+                            total_fields,
+                        ),
+                    )
                 )
-            )
+            elif field != "referencias":
+                content.update(
+                    self._generate(
+                        fields=(field,),
+                        schema_name=f"informe_tecnico_final_{field}",
+                        project=project,
+                        extra=self._report_extra(form_data, content),
+                        instructions=(
+                            instructions
+                            + self._section_instructions(field)
+                            + f" Redacta unicamente el campo {field} en esta respuesta."
+                        ),
+                        max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
+                        on_retry=lambda: self._notify_report_progress(
+                            progress,
+                            f"Reintentando {self._field_label(field)}...",
+                            completed_fields,
+                            total_fields,
+                        ),
+                    )
+                )
             self._notify_report_progress(
                 progress,
                 f"Completado: {self._field_label(field)}.",
@@ -134,11 +133,12 @@ class ClosureContentService:
                         fields=(field,),
                         schema_name=f"apartado_informe_ajustado_{field}",
                         project=project,
-                        extra=form_data,
+                        extra=self._report_extra(form_data, content),
                         instructions=(
                             instructions
-                            + f" Redacta unicamente el campo {field}. Debe tener "
-                            "estrictamente entre 220 y 240 palabras."
+                            + self._section_instructions(field)
+                            + f" Redacta unicamente el campo {field}. Debe tener entre "
+                            "180 y 260 palabras."
                         ),
                         max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
                         on_retry=lambda: self._notify_report_progress(
@@ -149,7 +149,150 @@ class ClosureContentService:
                         ),
                     )
                 )
+        content.setdefault("referencias", "")
+        content["anexos"] = ""
         return content
+
+    @staticmethod
+    def _report_base_instructions() -> str:
+        return (
+            "Redacta un Informe Tecnico Final de un Proyecto de Base Tecnologica "
+            "del SENA. El contexto contiene datos del proyecto, del formulario de "
+            "cierre y, cuando existe, informacion ya validada del diagnostico. Usa "
+            "solo esos datos y las fuentes externas consultadas mediante la herramienta "
+            "de busqueda cuando se soliciten. No inventes tecnologias, cifras, pruebas, "
+            "resultados, entregables, validaciones, evidencias, enlaces, certificaciones "
+            "ni referencias. Cada apartado tiene un proposito propio: desarrolla solo "
+            "la informacion pertinente y no repitas literalmente ni reformules de forma "
+            "innecesaria los contenidos de los apartados previos incluidos en el contexto. "
+            "Mantiene un tono tecnico, verificable y prudente. Conserva literalmente los "
+            "nombres de actividades, entregables, objetivos y el impacto aportados por la "
+            "persona usuaria."
+        )
+
+    @staticmethod
+    def _section_instructions(field: str) -> str:
+        instructions = {
+            "introduccion": (
+                " Seccion: introduccion. Explica el contexto, proposito y alcance sin "
+                "anticipar actividades, resultados ni conclusiones. Extension aproximada: 180 a 230 palabras."
+            ),
+            "planteamiento_problema": (
+                " Seccion: planteamiento del problema. Delimita necesidad, causas, consecuencias "
+                "y beneficiarios; no describas la solucion como si ya fuera un resultado. Extension: 180 a 230 palabras."
+            ),
+            "objetivo_general": (
+                " Seccion: objetivo general. Entrega una unica oracion precisa, sin titulo ni vineta."
+            ),
+            "objetivos_especificos": (
+                " Seccion: objetivos especificos. Entrega un objetivo por linea, sin numeracion, "
+                "sin vinetas y sin encabezados. Conserva su redaccion original si el contexto la aporta; "
+                "solo corrige presentacion minima."
+            ),
+            "metodologia": (
+                " Seccion: metodologia. Explica exclusivamente el enfoque y las fases de las metodologias "
+                "seleccionadas, sin repetir el detalle de cada actividad. Extension: 180 a 240 palabras."
+            ),
+            "desarrollo": (
+                " Seccion: desarrollo del proyecto. Usa todas las actividades registradas, en el mismo orden. "
+                "Para cada actividad escribe exactamente un encabezado con el formato `### Actividad: nombre literal`, "
+                "una linea `**Fase metodologica:** nombre de una fase coherente con las metodologias seleccionadas` y "
+                "un parrafo de 70 a 110 palabras sobre lo realizado, como se desarrollo, el proposito y su contribucion. "
+                "No inventes herramientas, procedimientos, resultados o evidencias que no esten en el contexto. No agregues "
+                "espacios de evidencia: el documento los incorporara automaticamente."
+            ),
+            "normatividad": (
+                " Seccion: normatividad. Incluye solo normas colombianas o estandares internacionales pertinentes "
+                "y aclara con prudencia si son obligatorios o de referencia. No listes normas sin relacion demostrable. "
+                "Extension: 160 a 220 palabras."
+            ),
+            "resultados": (
+                " Seccion: resultados. Describe exclusivamente los entregables y resultados registrados, su relacion "
+                "con los objetivos y las validaciones realmente informadas. No agregues resultados nuevos. Extension: 180 a 240 palabras."
+            ),
+            "analisis_viabilidad": (
+                " Seccion: analisis de viabilidad. Evalua solo dimensiones pertinentes al tipo de proyecto: tecnica, "
+                "tecnologica, operativa, productiva, economica, implementacion, infraestructura, talento, equipos, materiales "
+                "y escalamiento. Cierra con una conclusion explicita y adaptada sobre continuidad, adopcion o escalamiento. "
+                "Menciona los recursos de Tecnoparque solo cuando el contexto los respalde. Extension: 200 a 260 palabras."
+            ),
+            "propiedad_transferencia": (
+                " Seccion: propiedad intelectual y transferencia tecnologica en Colombia. Analiza la viabilidad de "
+                "proteccion de los desarrollos segun su naturaleza, por ejemplo derecho de autor, registro de software, obra, "
+                "diseno industrial, marca, secreto empresarial, patente o modelo de utilidad cuando proceda. No enumeres entregables. "
+                "Usa formulaciones responsables como 'podria ser susceptible de proteccion', 'se recomienda evaluar' y "
+                "'debera realizarse un analisis de novedad y antecedentes'; nunca afirmes que algo es patentable o registrable. "
+                "Extension: 180 a 240 palabras."
+            ),
+            "impacto": (
+                " Seccion: impacto del proyecto. Usa como insumo prioritario el campo additional_impacts del formulario; "
+                "amplialo sin cambiar su intencion. Incluye solo impactos tecnologicos, productivos, empresariales, economicos, "
+                "sociales, ambientales, culturales o institucionales que el contexto soporte. No uses impactos genericos. "
+                "Extension: 180 a 240 palabras."
+            ),
+            "conclusiones": (
+                " Seccion: conclusiones. Declara con claridad lo desarrollado, resultados, validaciones o aceptaciones solo "
+                "si fueron registradas, y el nivel de cumplimiento de objetivos con base en la evidencia disponible. Cuando sea "
+                "coherente con el tipo de proyecto y el TRL alcanzado, plantea prudentemente una nueva idea o proyecto para avanzar "
+                "hacia TRL 7 u 8; no lo afirmes como resultado automatico. Extension: 180 a 240 palabras."
+            ),
+        }
+        return instructions.get(field, "")
+
+    @staticmethod
+    def _report_extra(
+        form_data: dict[str, Any], previous_sections: dict[str, str]
+    ) -> dict[str, Any]:
+        extra = dict(form_data)
+        previous = {
+            field: value
+            for field, value in previous_sections.items()
+            if field not in {"referencias", "anexos"} and str(value).strip()
+        }
+        if previous:
+            extra["apartados_previos_para_evitar_repeticion"] = previous
+        return extra
+
+    def _generate_state_of_art(
+        self,
+        *,
+        project: dict[str, Any],
+        form_data: dict[str, Any],
+        previous_sections: dict[str, str],
+        on_retry: Callable[[], None] | None,
+    ) -> dict[str, str]:
+        instructions = (
+            self._report_base_instructions()
+            + " Seccion: estado del arte y estado de la tecnica. Consulta fuentes externas reales y selecciona entre "
+            "tres y cinco referentes directamente relacionados con la descripcion, tecnologias previstas o actividades "
+            "del proyecto. Incluye desarrollos, tecnologias, articulos o soluciones comparables cuando existan fuentes "
+            "adecuadas. Explica las coincidencias, diferencias y el posible aporte innovador sin afirmar novedades no verificadas. "
+            "Incluye citas parenteticas APA 7 en los parrafos. Despues de los parrafos entrega una tabla Markdown con exactamente "
+            "estas seis columnas: Proyecto / Tecnologia | Organizacion / Autor | Caracteristicas principales | Relacion con el proyecto "
+            "| Diferencias / aporte innovador | Fuente. En Fuente usa una cita breve y la URL canonica verificable. "
+            "En referencias, incluye una referencia APA 7 por linea para cada fuente consultada, con responsable, fecha, titulo y URL "
+            "cuando corresponda. No inventes autor, fecha, URL, cita ni referencia; si no hay una fuente suficiente, no la incluyas. "
+            "No uses 'Autor desconocido', 'Sin autor confirmado' ni 's.f.' cuando la fuente muestre datos verificables."
+        )
+        return self._generate(
+            fields=("estado_arte", "referencias"),
+            schema_name="informe_tecnico_final_estado_arte",
+            project=project,
+            extra=self._report_extra(form_data, previous_sections),
+            instructions=instructions,
+            max_output_tokens=self.REPORT_RETRY_MAX_OUTPUT_TOKENS,
+            on_retry=on_retry,
+            tools=[{
+                "type": "web_search",
+                "search_context_size": "high",
+                "user_location": {
+                    "type": "approximate",
+                    "country": "CO",
+                    "timezone": "America/Bogota",
+                },
+            }],
+            timeout=300.0,
+        )
 
     def generate_canvas(
         self, project: dict[str, Any], form_data: dict[str, Any]
@@ -196,6 +339,8 @@ class ClosureContentService:
         instructions: str,
         max_output_tokens: int | None = None,
         on_retry: Callable[[], None] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        timeout: float = 60.0,
     ) -> dict[str, str]:
         try:
             from openai import OpenAI, OpenAIError
@@ -235,11 +380,13 @@ class ClosureContentService:
                 },
                 "store": False,
             }
+            if tools:
+                request["tools"] = tools
             if max_output_tokens:
                 request["max_output_tokens"] = max_output_tokens
                 if model.startswith("gpt-5"):
                     request["reasoning"] = {"effort": "low"}
-            client = OpenAI(api_key=api_key, timeout=60.0)
+            client = OpenAI(api_key=api_key, timeout=timeout)
             response = client.responses.create(**request)
             output_text = (response.output_text or "").strip()
             self._log_response_metadata(

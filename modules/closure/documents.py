@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from services.closure_content_service import ClosureContentService
+from services.diagnostic_repository import DiagnosticRepository
 from services.document_generation.closure_services import (
     BusinessModelPdfService,
     CertificationLetterDocumentService,
@@ -215,9 +216,13 @@ def _generate_report_content(
         )
 
     try:
+        generation_data = dict(form_data)
+        diagnostic_context = _load_diagnostic_context(project["id"])
+        if diagnostic_context:
+            generation_data["contexto_diagnostico"] = diagnostic_context
         st.session_state[f"{prefix}_content"] = service.generate_report(
             project,
-            form_data,
+            generation_data,
             progress=report_progress,
         )
     except ProjectContentError as error:
@@ -226,6 +231,25 @@ def _generate_report_content(
     else:
         progress_bar.progress(100, text="Contenido técnico generado (100%).")
         st.success("Contenido generado. Revísalo y edítalo antes de preparar el documento.")
+
+
+def _load_diagnostic_context(project_id: int) -> dict[str, Any]:
+    """Returns saved diagnostic data that is relevant to the final report."""
+
+    try:
+        saved = DiagnosticRepository().load(project_id) or {}
+    except DatabaseError:
+        return {}
+    form = saved.get("form") or {}
+    content = saved.get("content") or {}
+    context = {
+        "problematica": form.get("problem", ""),
+        "tecnologias_previstas": form.get("technologies", ""),
+        "resultados_previstos": form.get("expected_products", ""),
+        "objetivo_general": content.get("general_objective", ""),
+        "objetivos_especificos": content.get("specific_objectives", []),
+    }
+    return {key: value for key, value in context.items() if value}
 
 
 def _generate_content(prefix: str, action: Any) -> None:

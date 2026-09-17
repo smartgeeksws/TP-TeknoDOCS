@@ -39,6 +39,8 @@ def format_date(value: Any) -> str:
 class FinalReportDocumentService:
     """Fills the official GCDTP-F-023 template without modifying it."""
 
+    TECHNOPARK_NODE = "Tecnoparque Nodo Angostura"
+
     FIELD_HEADINGS = {
         "Introducción": "introduccion",
         "Planteamiento del problema": "planteamiento_problema",
@@ -73,10 +75,16 @@ class FinalReportDocumentService:
         if not Path(FINAL_REPORT_TEMPLATE).is_file():
             raise ClosureDocumentError("No se encontro la plantilla GCDTP-F-023.")
         document = Document(FINAL_REPORT_TEMPLATE)
+        self._format_report_hierarchy(document)
         self._fill_identification(document, project, form_data)
         self._clear_objectives_intro(document)
         for heading, field in self.FIELD_HEADINGS.items():
-            self._replace_after_heading(document, heading, content.get(field, ""))
+            self._replace_after_heading(
+                document,
+                heading,
+                content.get(field, ""),
+                form_data=form_data,
+            )
         self._insert_normativity(document, content.get("normatividad", ""))
         self._renumber_headings(document)
         self._remove_instructions(document)
@@ -103,35 +111,228 @@ class FinalReportDocumentService:
             project.get("technology_line") or "No registrada",
             project.get("initial_trl") or "No registrado",
             data.get("achieved_trl") or project.get("target_trl") or "No registrado",
-            project.get("city") or "No registrada",
+            self.TECHNOPARK_NODE,
             format_date(data.get("delivery_date")),
         ]
         for row, value in zip(tables[1].rows, values):
             self._set_cell(row.cells[1], str(value))
 
     @staticmethod
-    def _set_cell(cell: Any, value: str) -> None:
+    def _set_cell(cell: Any, value: str, *, bold: bool = False) -> None:
         paragraph = cell.paragraphs[0]
         for run in paragraph.runs:
             run.text = ""
         if paragraph.runs:
             paragraph.runs[0].text = value
+            paragraph.runs[0].bold = bold
         else:
-            paragraph.add_run(value)
+            paragraph.add_run(value).bold = bold
 
-    def _replace_after_heading(self, document: Document, heading: str, value: str) -> None:
+    def _replace_after_heading(
+        self,
+        document: Document,
+        heading: str,
+        value: str,
+        *,
+        form_data: dict[str, Any] | None = None,
+    ) -> None:
         normalized_heading = self._normalize(heading)
         paragraphs = document.paragraphs
         for index, paragraph in enumerate(paragraphs[:-1]):
             if self._normalize(paragraph.text) == normalized_heading:
                 next_paragraph = paragraphs[index + 1]
+                normalized_target = self._normalize(heading)
+                if normalized_target.startswith("5. estado"):
+                    self._replace_state_of_art(document, next_paragraph, value)
+                    return
+                if normalized_target.startswith("7. desarrollo"):
+                    self._replace_development(
+                        document,
+                        next_paragraph,
+                        value,
+                        form_data or {},
+                    )
+                    return
                 if heading in {"4.1 Objetivo General", "4.2 Objetivos Específicos"}:
                     replacement = document.add_paragraph()
                     paragraph._p.addnext(replacement._p)
-                    self._replace_paragraph(replacement, value)
+                    if self._normalize(heading).startswith("4.2 objetivo"):
+                        self._replace_with_bullets(document, replacement, value)
+                    else:
+                        self._replace_paragraph(replacement, value)
                 else:
                     self._replace_paragraph(next_paragraph, value)
                 return
+
+    def _replace_with_bullets(
+        self, document: Document, paragraph: Any, value: str
+    ) -> None:
+        objectives = [
+            re.sub(r"^(?:[-*•]\s*|\d+[.)]\s*)", "", line).strip()
+            for line in str(value).splitlines()
+            if line.strip()
+        ]
+        self._replace_paragraph(paragraph, "")
+        if not objectives:
+            return
+        anchor = paragraph
+        for objective in objectives:
+            current = self._paragraph_after(document, anchor)
+            current.paragraph_format.left_indent = Inches(0.25)
+            current.paragraph_format.first_line_indent = Inches(-0.15)
+            self._replace_paragraph(current, f"• {objective}")
+            anchor = current
+
+    def _replace_state_of_art(
+        self, document: Document, paragraph: Any, value: str
+    ) -> None:
+        before, headers, rows, after = self._markdown_table(value)
+        self._replace_paragraph(paragraph, before[0] if before else "")
+        anchor = paragraph
+        for line in before[1:]:
+            anchor = self._paragraph_after(document, anchor)
+            self._replace_paragraph(anchor, line)
+        if headers and rows:
+            table = document.add_table(rows=1, cols=len(headers))
+            table.style = "Table Grid"
+            for index, header in enumerate(headers):
+                self._set_cell(table.rows[0].cells[index], header, bold=True)
+            for row in rows:
+                cells = table.add_row().cells
+                for index, cell_value in enumerate(row):
+                    self._set_cell(cells[index], cell_value)
+            anchor._p.addnext(table._tbl)
+            anchor = self._paragraph_after(document, anchor)
+            anchor._p.getparent().remove(anchor._p)
+            anchor = self._paragraph_after_table(document, table)
+        for line in after:
+            anchor = self._paragraph_after(document, anchor)
+            self._replace_paragraph(anchor, line)
+
+    def _replace_development(
+        self,
+        document: Document,
+        paragraph: Any,
+        value: str,
+        form_data: dict[str, Any],
+    ) -> None:
+        activities = self._form_lines(form_data.get("activities", ""))
+        sections = self._development_sections(value)
+        if not activities:
+            self._replace_paragraph(paragraph, value)
+            return
+        self._replace_paragraph(paragraph, "")
+        anchor = paragraph
+        for index, activity in enumerate(activities):
+            title = self._paragraph_after(document, anchor)
+            self._replace_paragraph(title, f"Actividad {index + 1}: {activity}", bold=True)
+            anchor = title
+            section = sections[index] if index < len(sections) else ""
+            for line in self._development_lines(section):
+                anchor = self._paragraph_after(document, anchor)
+                self._replace_paragraph(anchor, line)
+            evidence_title = self._paragraph_after(document, anchor)
+            self._replace_paragraph(evidence_title, "Evidencias de la actividad", bold=True)
+            evidence = self._paragraph_after(document, evidence_title)
+            self._replace_paragraph(
+                evidence,
+                "[Espacio destinado para incorporar fotografías, capturas, diagramas, resultados u otras evidencias.]",
+            )
+            anchor = evidence
+        heading = self._paragraph_after(document, anchor)
+        self._replace_paragraph(heading, "Entregables del proyecto", bold=True)
+        self._insert_deliverables_table(document, heading, form_data.get("deliverables", ""))
+
+    def _insert_deliverables_table(
+        self, document: Document, anchor: Any, raw_deliverables: Any
+    ) -> None:
+        table = document.add_table(rows=1, cols=3)
+        table.style = "Table Grid"
+        for index, header in enumerate(
+            ("Entregable", "Descripción del entregable", "Enlace / Evidencia")
+        ):
+            self._set_cell(table.rows[0].cells[index], header, bold=True)
+        for deliverable in self._form_lines(raw_deliverables):
+            name, description = self._deliverable_parts(deliverable)
+            cells = table.add_row().cells
+            self._set_cell(cells[0], name)
+            self._set_cell(cells[1], description)
+            self._set_cell(cells[2], "")
+        anchor._p.addnext(table._tbl)
+
+    @staticmethod
+    def _deliverable_parts(value: str) -> tuple[str, str]:
+        for separator in (" - ", ": "):
+            if separator in value:
+                name, description = value.split(separator, 1)
+                if name.strip() and description.strip():
+                    return name.strip(), description.strip()
+        return value, ""
+
+    @staticmethod
+    def _form_lines(value: Any) -> list[str]:
+        return [
+            re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+            for line in str(value or "").splitlines()
+            if line.strip()
+        ]
+
+    @staticmethod
+    def _development_sections(value: str) -> list[str]:
+        parts = re.split(r"^###\s*(?:Actividad:\s*)?.*$", str(value), flags=re.MULTILINE)
+        return [part.strip() for part in parts[1:] if part.strip()]
+
+    @staticmethod
+    def _development_lines(value: str) -> list[str]:
+        lines = []
+        for line in str(value).splitlines():
+            clean = line.strip()
+            if not clean or "evidencias de la actividad" in clean.casefold():
+                continue
+            if clean.startswith("###"):
+                continue
+            lines.append(clean)
+        return lines or ["Descripción técnica pendiente de revisión manual."]
+
+    @staticmethod
+    def _markdown_table(value: str) -> tuple[list[str], list[str], list[list[str]], list[str]]:
+        lines = [line.strip() for line in str(value).splitlines()]
+        for index in range(len(lines) - 1):
+            if not (lines[index].startswith("|") and lines[index + 1].startswith("|")):
+                continue
+            if not re.fullmatch(r"[| :\-]+", lines[index + 1]):
+                continue
+            headers = [cell.strip() for cell in lines[index].strip("|").split("|")]
+            if len(headers) != 6:
+                continue
+            rows: list[list[str]] = []
+            end = index + 2
+            while end < len(lines) and lines[end].startswith("|"):
+                row = [cell.strip() for cell in lines[end].strip("|").split("|")]
+                if len(row) == len(headers):
+                    rows.append(row)
+                end += 1
+            return lines[:index], headers, rows, lines[end:]
+        return lines, [], [], []
+
+    @staticmethod
+    def _paragraph_after(document: Document, anchor: Any) -> Any:
+        paragraph = document.add_paragraph()
+        anchor._p.addnext(paragraph._p)
+        return paragraph
+
+    @staticmethod
+    def _paragraph_after_table(document: Document, table: Any) -> Any:
+        paragraph = document.add_paragraph()
+        table._tbl.addnext(paragraph._p)
+        return paragraph
+
+    def _format_report_hierarchy(self, document: Document) -> None:
+        for paragraph in document.paragraphs:
+            style_name = getattr(paragraph.style, "name", "")
+            if style_name in {"Title", "Heading 1", "Heading 2"}:
+                for run in paragraph.runs:
+                    run.bold = True
 
     def _clear_objectives_intro(self, document: Document) -> None:
         self._replace_after_heading(document, "Objetivos", "")
@@ -152,18 +353,31 @@ class FinalReportDocumentService:
         for paragraph in document.paragraphs:
             for old_heading, new_heading in self.RENAMED_HEADINGS.items():
                 if self._normalize(paragraph.text) == self._normalize(old_heading):
-                    self._replace_paragraph(paragraph, new_heading)
+                    self._replace_paragraph(paragraph, new_heading, bold=True)
                     break
 
     @staticmethod
-    def _replace_paragraph(paragraph: Any, value: str) -> None:
+    def _replace_paragraph(paragraph: Any, value: str, *, bold: bool = False) -> None:
         for run in paragraph.runs:
             run.text = ""
         lines = value.splitlines() or [""]
-        paragraph.add_run(lines[0])
+        FinalReportDocumentService._add_rich_run(paragraph, lines[0], bold=bold)
         for line in lines[1:]:
             paragraph.add_run().add_break()
-            paragraph.add_run(line)
+            FinalReportDocumentService._add_rich_run(paragraph, line, bold=bold)
+
+    @staticmethod
+    def _add_rich_run(paragraph: Any, value: str, *, bold: bool = False) -> None:
+        line = str(value).strip()
+        full_match = re.fullmatch(r"\*\*(.+)\*\*", line)
+        label_match = re.match(r"\*\*(.+?):\*\*\s*(.*)", line)
+        if full_match:
+            paragraph.add_run(full_match.group(1)).bold = True
+        elif label_match:
+            paragraph.add_run(f"{label_match.group(1)}:").bold = True
+            paragraph.add_run(" " + label_match.group(2))
+        else:
+            paragraph.add_run(line).bold = bold
 
     def _remove_instructions(self, document: Document) -> None:
         for paragraph in list(document.paragraphs):
