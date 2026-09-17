@@ -200,15 +200,16 @@ class ClosureContentService:
             if max_output_tokens:
                 request["max_output_tokens"] = max_output_tokens
             response = OpenAI(api_key=api_key, timeout=60.0).responses.create(**request)
-            output_text = response.output_text.strip()
+            output_text = (response.output_text or "").strip()
+            self._log_response_metadata(
+                response=response,
+                schema_name=schema_name,
+                fields=fields,
+                input_characters=len(request["input"]),
+                output_characters=len(output_text),
+                max_output_tokens=max_output_tokens,
+            )
             if not output_text:
-                self._log_empty_response(
-                    response=response,
-                    schema_name=schema_name,
-                    fields=fields,
-                    input_characters=len(request["input"]),
-                    max_output_tokens=max_output_tokens,
-                )
                 raise ProjectContentError(
                     "OpenAI no devolvio contenido para esta parte del informe."
                 )
@@ -239,12 +240,13 @@ class ClosureContentService:
         return {field: str(content[field]).strip() for field in fields}
 
     @staticmethod
-    def _log_empty_response(
+    def _log_response_metadata(
         *,
         response: Any,
         schema_name: str,
         fields: tuple[str, ...],
         input_characters: int,
+        output_characters: int,
         max_output_tokens: int | None,
     ) -> None:
         """Logs response metadata without recording project content or credentials."""
@@ -253,9 +255,9 @@ class ClosureContentService:
         output_details = getattr(usage, "output_tokens_details", None)
         incomplete_details = getattr(response, "incomplete_details", None)
         logger.warning(
-            "OpenAI returned empty output: schema=%s fields=%s response_id=%s "
+            "OpenAI response metadata: schema=%s fields=%s response_id=%s "
             "model=%s status=%s incomplete_reason=%s input_characters=%s "
-            "input_tokens=%s output_tokens=%s reasoning_tokens=%s "
+            "output_characters=%s input_tokens=%s output_tokens=%s reasoning_tokens=%s "
             "max_output_tokens=%s",
             schema_name,
             ",".join(fields),
@@ -264,6 +266,7 @@ class ClosureContentService:
             getattr(response, "status", None),
             getattr(incomplete_details, "reason", None),
             input_characters,
+            output_characters,
             getattr(usage, "input_tokens", None),
             getattr(usage, "output_tokens", None),
             getattr(output_details, "reasoning_tokens", None),
