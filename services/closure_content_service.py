@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from services.project_content_service import ProjectContentError, ProjectContentService
 
 
 logger = logging.getLogger(__name__)
+ReportProgressCallback = Callable[[str, int, int], None]
 
 
 class ClosureContentService:
     """Generates closure content only when invoked by the user."""
 
-    REPORT_RETRY_MAX_OUTPUT_TOKENS = 2400
+    REPORT_MAX_OUTPUT_TOKENS = 4000
+    REPORT_RETRY_MAX_OUTPUT_TOKENS = 8000
     REPORT_FIELDS = (
         "introduccion",
         "planteamiento_problema",
@@ -63,7 +65,10 @@ class ClosureContentService:
         "conclusiones",
     )
     def generate_report(
-        self, project: dict[str, Any], form_data: dict[str, Any]
+        self,
+        project: dict[str, Any],
+        form_data: dict[str, Any],
+        progress: ReportProgressCallback | None = None,
     ) -> dict[str, str]:
         instructions = (
             "Redacta un informe tecnico final de un Proyecto de Base Tecnologica "
@@ -82,7 +87,14 @@ class ClosureContentService:
             "proyecto, indicando si su aplicacion es obligatoria o de referencia."
         )
         content: dict[str, str] = {}
-        for field in self.REPORT_FIELDS:
+        total_fields = len(self.REPORT_FIELDS)
+        for completed_fields, field in enumerate(self.REPORT_FIELDS):
+            self._notify_report_progress(
+                progress,
+                f"Generando {self._field_label(field)}...",
+                completed_fields,
+                total_fields,
+            )
             content.update(
                 self._generate(
                     fields=(field,),
@@ -93,12 +105,30 @@ class ClosureContentService:
                         instructions
                         + f" Redacta unicamente el campo {field} en esta respuesta."
                     ),
-                    max_output_tokens=1200,
+                    max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
+                    on_retry=lambda: self._notify_report_progress(
+                        progress,
+                        f"Reintentando {self._field_label(field)}...",
+                        completed_fields,
+                        total_fields,
+                    ),
                 )
+            )
+            self._notify_report_progress(
+                progress,
+                f"Completado: {self._field_label(field)}.",
+                completed_fields + 1,
+                total_fields,
             )
         invalid = self._report_sections_outside_range(content)
         if invalid:
             for field in invalid:
+                self._notify_report_progress(
+                    progress,
+                    f"Ajustando {self._field_label(field)}...",
+                    total_fields,
+                    total_fields,
+                )
                 content.update(
                     self._generate(
                         fields=(field,),
@@ -110,7 +140,13 @@ class ClosureContentService:
                             + f" Redacta unicamente el campo {field}. Debe tener "
                             "estrictamente entre 220 y 240 palabras."
                         ),
-                        max_output_tokens=1200,
+                        max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
+                        on_retry=lambda: self._notify_report_progress(
+                            progress,
+                            f"Reintentando ajuste de {self._field_label(field)}...",
+                            total_fields,
+                            total_fields,
+                        ),
                     )
                 )
         return content
@@ -159,6 +195,7 @@ class ClosureContentService:
         extra: dict[str, Any],
         instructions: str,
         max_output_tokens: int | None = None,
+        on_retry: Callable[[], None] | None = None,
     ) -> dict[str, str]:
         try:
             from openai import OpenAI, OpenAIError
@@ -183,9 +220,9 @@ class ClosureContentService:
             "datos_adicionales": extra,
         }
         try:
+            model = ProjectContentService._setting("OPENAI_MODEL", "model") or "gpt-5-mini"
             request = {
-                "model": ProjectContentService._setting("OPENAI_MODEL", "model")
-                or "gpt-5-mini",
+                "model": model,
                 "instructions": instructions,
                 "input": json.dumps(payload, ensure_ascii=False),
                 "text": {
@@ -200,6 +237,8 @@ class ClosureContentService:
             }
             if max_output_tokens:
                 request["max_output_tokens"] = max_output_tokens
+                if model.startswith("gpt-5"):
+                    request["reasoning"] = {"effort": "low"}
             client = OpenAI(api_key=api_key, timeout=60.0)
             response = client.responses.create(**request)
             output_text = (response.output_text or "").strip()
@@ -223,6 +262,8 @@ class ClosureContentService:
                     ",".join(fields),
                     retry_max_output_tokens,
                 )
+                if on_retry:
+                    on_retry()
                 request["max_output_tokens"] = retry_max_output_tokens
                 response = client.responses.create(**request)
                 output_text = (response.output_text or "").strip()
@@ -265,6 +306,20 @@ class ClosureContentService:
             )
             raise ProjectContentError("OpenAI no devolvio todos los campos requeridos.")
         return {field: str(content[field]).strip() for field in fields}
+
+    @staticmethod
+    def _notify_report_progress(
+        progress: ReportProgressCallback | None,
+        message: str,
+        completed_fields: int,
+        total_fields: int,
+    ) -> None:
+        if progress:
+            progress(message, completed_fields, total_fields)
+
+    @staticmethod
+    def _field_label(field: str) -> str:
+        return field.replace("_", " ").capitalize()
 
     @staticmethod
     def _is_max_output_incomplete(response: Any) -> bool:

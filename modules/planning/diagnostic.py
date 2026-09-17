@@ -150,11 +150,21 @@ def render_diagnostic(
             st.toast("Borrador guardado correctamente.", icon=":material/check_circle:")
 
     if generate:
+        progress_bar: Any | None = None
         try:
             _validate_form(form_data)
             repository.save_form(project["id"], form_data)
+            progress_bar = st.progress(
+                5,
+                text="Progreso del proceso: 5%. Iniciando generación...",
+            )
             with st.status("Iniciando generación...", expanded=True) as status:
                 def report(message: str) -> None:
+                    percentage = _diagnostic_progress_percentage(message)
+                    progress_bar.progress(
+                        percentage,
+                        text=f"Progreso del proceso: {percentage}%. {message}",
+                    )
                     status.write(message)
                     status.update(label=message)
 
@@ -165,6 +175,10 @@ def render_diagnostic(
                 report("Guardando formulario y auditoría de fuentes...")
                 repository.save_generation(
                     project["id"], form_data, content, content["sources"]
+                )
+                progress_bar.progress(
+                    100,
+                    text="Diagnóstico y Estado del Arte generados (100%).",
                 )
                 status.update(
                     label="Diagnóstico generado correctamente.",
@@ -182,6 +196,8 @@ def render_diagnostic(
             }
             _set_editor_state(prefix, content, force=True)
         except (ValueError, DatabaseError, DiagnosticContentError, DiagnosticDocumentError, OSError) as error:
+            if progress_bar is not None:
+                progress_bar.empty()
             st.error(f"No fue posible generar el diagnóstico: {error}")
 
     _restore_saved_word(prefix, project, saved, document_service)
@@ -234,6 +250,21 @@ def render_diagnostic(
                 st.caption(
                     "Secciones: " + ", ".join(source.get("sections", []))
                 )
+
+
+def _diagnostic_progress_percentage(message: str) -> int:
+    stages = (
+        ("Analizando", 10),
+        ("Recuperando", 20),
+        ("Consultando", 45),
+        ("Preparando", 70),
+        ("Generando cronograma", 82),
+        ("Guardando", 92),
+    )
+    return next(
+        (percentage for prefix, percentage in stages if message.startswith(prefix)),
+        10,
+    )
 
 
 def _initialize_state(prefix: str, saved: dict[str, Any] | None) -> None:

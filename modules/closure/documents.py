@@ -97,7 +97,7 @@ def render_final_report(project_service: ProjectService) -> None:
         if not all(form_data[key] for key in ("achieved_trl", "deliverables", "methodologies", "activities")):
             st.error("Completa los campos requeridos para generar el informe.")
         else:
-            _generate_content(prefix, lambda: ClosureContentService().generate_report(project, form_data))
+            _generate_report_content(prefix, project, form_data)
     content = st.session_state.get(f"{prefix}_content")
     if content:
         edited = _content_editor(prefix, content, REPORT_LABELS)
@@ -191,6 +191,41 @@ def _project_details(project: dict[str, Any]) -> None:
         st.write(f"**Código:** {project.get('code') or 'Sin código'}")
         st.write(f"**Proyecto:** {project.get('name') or 'No registrado'}")
         st.write(f"**Línea tecnológica:** {project.get('technology_line') or 'No registrada'}")
+
+
+def _generate_report_content(
+    prefix: str,
+    project: dict[str, Any],
+    form_data: dict[str, Any],
+) -> None:
+    service = ClosureContentService()
+    progress_bar = st.progress(
+        0,
+        text=f"Generando contenido: 0 de {len(service.REPORT_FIELDS)} apartados (0%).",
+    )
+
+    def report_progress(message: str, completed_fields: int, total_fields: int) -> None:
+        percentage = round((completed_fields / total_fields) * 100)
+        progress_bar.progress(
+            percentage,
+            text=(
+                f"Generando contenido: {completed_fields} de {total_fields} "
+                f"apartados ({percentage}%). {message}"
+            ),
+        )
+
+    try:
+        st.session_state[f"{prefix}_content"] = service.generate_report(
+            project,
+            form_data,
+            progress=report_progress,
+        )
+    except ProjectContentError as error:
+        progress_bar.empty()
+        st.error(str(error))
+    else:
+        progress_bar.progress(100, text="Contenido técnico generado (100%).")
+        st.success("Contenido generado. Revísalo y edítalo antes de preparar el documento.")
 
 
 def _generate_content(prefix: str, action: Any) -> None:
