@@ -111,6 +111,15 @@ class DiagnosticContentService:
         client = OpenAI(api_key=api_key, timeout=300.0)
         try:
             response = client.responses.create(**request)
+            if getattr(response, "status", None) != "completed":
+                raise DiagnosticContentError(
+                    self._incomplete_response_message(response)
+                )
+            if not (response.output_text or "").strip():
+                raise DiagnosticContentError(
+                    "OpenAI no devolvio contenido para el diagnostico. "
+                    "Intenta generarlo nuevamente."
+                )
             content = self._sanitize_generated_content(
                 json.loads(response.output_text)
             )
@@ -128,6 +137,16 @@ class DiagnosticContentService:
 
         self._notify(progress, "Preparando contenido para revisión manual...")
         return content
+
+    @staticmethod
+    def _incomplete_response_message(response: Any) -> str:
+        incomplete_details = getattr(response, "incomplete_details", None)
+        if getattr(incomplete_details, "reason", None) == "max_output_tokens":
+            return (
+                "OpenAI no completo el diagnostico porque se alcanzo el limite de "
+                "generacion. Intenta generarlo nuevamente."
+            )
+        return "OpenAI no completo la respuesta del diagnostico. Intenta nuevamente."
 
     @staticmethod
     def _normalize_objective(value: Any) -> str:

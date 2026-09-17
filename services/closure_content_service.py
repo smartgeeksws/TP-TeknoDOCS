@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class ClosureContentService:
     """Generates closure content only when invoked by the user."""
 
+    REPORT_RETRY_MAX_OUTPUT_TOKENS = 2400
     REPORT_FIELDS = (
         "introduccion",
         "planteamiento_problema",
@@ -199,7 +200,8 @@ class ClosureContentService:
             }
             if max_output_tokens:
                 request["max_output_tokens"] = max_output_tokens
-            response = OpenAI(api_key=api_key, timeout=60.0).responses.create(**request)
+            client = OpenAI(api_key=api_key, timeout=60.0)
+            response = client.responses.create(**request)
             output_text = (response.output_text or "").strip()
             self._log_response_metadata(
                 response=response,
@@ -209,6 +211,31 @@ class ClosureContentService:
                 output_characters=len(output_text),
                 max_output_tokens=max_output_tokens,
             )
+            if self._is_max_output_incomplete(response) and max_output_tokens:
+                retry_max_output_tokens = max(
+                    max_output_tokens + 1,
+                    self.REPORT_RETRY_MAX_OUTPUT_TOKENS,
+                )
+                logger.warning(
+                    "Retrying OpenAI response after max output limit: schema=%s "
+                    "fields=%s max_output_tokens=%s",
+                    schema_name,
+                    ",".join(fields),
+                    retry_max_output_tokens,
+                )
+                request["max_output_tokens"] = retry_max_output_tokens
+                response = client.responses.create(**request)
+                output_text = (response.output_text or "").strip()
+                self._log_response_metadata(
+                    response=response,
+                    schema_name=schema_name,
+                    fields=fields,
+                    input_characters=len(request["input"]),
+                    output_characters=len(output_text),
+                    max_output_tokens=retry_max_output_tokens,
+                )
+            if getattr(response, "status", None) != "completed":
+                raise ProjectContentError(self._incomplete_response_message(response))
             if not output_text:
                 raise ProjectContentError(
                     "OpenAI no devolvio contenido para esta parte del informe."
@@ -240,6 +267,24 @@ class ClosureContentService:
         return {field: str(content[field]).strip() for field in fields}
 
     @staticmethod
+    def _is_max_output_incomplete(response: Any) -> bool:
+        incomplete_details = getattr(response, "incomplete_details", None)
+        return (
+            getattr(response, "status", None) == "incomplete"
+            and getattr(incomplete_details, "reason", None) == "max_output_tokens"
+        )
+
+    @staticmethod
+    def _incomplete_response_message(response: Any) -> str:
+        incomplete_details = getattr(response, "incomplete_details", None)
+        if getattr(incomplete_details, "reason", None) == "max_output_tokens":
+            return (
+                "OpenAI no completo el contenido porque se alcanzo el limite de "
+                "generacion. Intenta nuevamente."
+            )
+        return "OpenAI no completo la respuesta solicitada. Intenta nuevamente."
+
+    @staticmethod
     def _log_response_metadata(
         *,
         response: Any,
@@ -254,7 +299,8 @@ class ClosureContentService:
         usage = getattr(response, "usage", None)
         output_details = getattr(usage, "output_tokens_details", None)
         incomplete_details = getattr(response, "incomplete_details", None)
-        logger.warning(
+        log = logger.warning if getattr(response, "status", None) != "completed" else logger.info
+        log(
             "OpenAI response metadata: schema=%s fields=%s response_id=%s "
             "model=%s status=%s incomplete_reason=%s input_characters=%s "
             "output_characters=%s input_tokens=%s output_tokens=%s reasoning_tokens=%s "
