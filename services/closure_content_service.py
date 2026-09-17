@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from services.project_content_service import ProjectContentError, ProjectContentService
+
+
+logger = logging.getLogger(__name__)
 
 
 class ClosureContentService:
@@ -198,17 +202,73 @@ class ClosureContentService:
             response = OpenAI(api_key=api_key, timeout=60.0).responses.create(**request)
             output_text = response.output_text.strip()
             if not output_text:
+                self._log_empty_response(
+                    response=response,
+                    schema_name=schema_name,
+                    fields=fields,
+                    input_characters=len(request["input"]),
+                    max_output_tokens=max_output_tokens,
+                )
                 raise ProjectContentError(
                     "OpenAI no devolvio contenido para esta parte del informe."
                 )
             content = json.loads(output_text)
         except (OpenAIError, json.JSONDecodeError, TypeError, ValueError) as error:
+            logger.exception(
+                "OpenAI generation failed: schema=%s fields=%s input_characters=%s "
+                "max_output_tokens=%s error_type=%s",
+                schema_name,
+                ",".join(fields),
+                len(json.dumps(payload, ensure_ascii=False)),
+                max_output_tokens,
+                type(error).__name__,
+            )
             raise ProjectContentError(
                 f"No fue posible generar el contenido con OpenAI: {error}"
             ) from error
         if any(not str(content.get(field, "")).strip() for field in fields):
+            logger.warning(
+                "OpenAI response has required fields without content: schema=%s fields=%s "
+                "response_id=%s status=%s",
+                schema_name,
+                ",".join(fields),
+                getattr(response, "id", None),
+                getattr(response, "status", None),
+            )
             raise ProjectContentError("OpenAI no devolvio todos los campos requeridos.")
         return {field: str(content[field]).strip() for field in fields}
+
+    @staticmethod
+    def _log_empty_response(
+        *,
+        response: Any,
+        schema_name: str,
+        fields: tuple[str, ...],
+        input_characters: int,
+        max_output_tokens: int | None,
+    ) -> None:
+        """Logs response metadata without recording project content or credentials."""
+
+        usage = getattr(response, "usage", None)
+        output_details = getattr(usage, "output_tokens_details", None)
+        incomplete_details = getattr(response, "incomplete_details", None)
+        logger.warning(
+            "OpenAI returned empty output: schema=%s fields=%s response_id=%s "
+            "model=%s status=%s incomplete_reason=%s input_characters=%s "
+            "input_tokens=%s output_tokens=%s reasoning_tokens=%s "
+            "max_output_tokens=%s",
+            schema_name,
+            ",".join(fields),
+            getattr(response, "id", None),
+            getattr(response, "model", None),
+            getattr(response, "status", None),
+            getattr(incomplete_details, "reason", None),
+            input_characters,
+            getattr(usage, "input_tokens", None),
+            getattr(usage, "output_tokens", None),
+            getattr(output_details, "reasoning_tokens", None),
+            max_output_tokens,
+        )
 
     def _report_sections_outside_range(self, content: dict[str, str]) -> list[str]:
         return [
