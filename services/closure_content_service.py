@@ -92,6 +92,14 @@ class ClosureContentService:
                         ),
                     )
                 )
+            elif field == "referencias":
+                content.update(
+                    self._generate_bibliography(
+                        project=project,
+                        form_data=form_data,
+                        content=content,
+                    )
+                )
             elif field == "objetivos_especificos":
                 saved_objectives = self._saved_specific_objectives(form_data)
                 if saved_objectives:
@@ -117,7 +125,7 @@ class ClosureContentService:
                             "OpenAI no devolvio objetivos especificos validos. "
                             "Verifica los objetivos guardados en el diagnostico e intenta nuevamente."
                         )
-            elif field != "referencias":
+            else:
                 content.update(
                     self._generate(
                         fields=(field,),
@@ -174,7 +182,6 @@ class ClosureContentService:
                         ),
                     )
                 )
-        content.setdefault("referencias", "")
         content["anexos"] = ""
         return content
 
@@ -325,12 +332,12 @@ class ClosureContentService:
             "Incluye citas parenteticas APA 7 en los parrafos. Despues de los parrafos entrega una tabla Markdown con exactamente "
             "estas seis columnas: Proyecto / Tecnologia | Organizacion / Autor | Caracteristicas principales | Relacion con el proyecto "
             "| Diferencias / aporte innovador | Fuente. En Fuente usa una cita breve y la URL canonica verificable. "
-            "En referencias, incluye una referencia APA 7 por linea para cada fuente consultada, con responsable, fecha, titulo y URL "
-            "cuando corresponda. No inventes autor, fecha, URL, cita ni referencia; si no hay una fuente suficiente, no la incluyas. "
+            "No incluyas una bibliografia ni una seccion de referencias en este campo; se construira por separado. "
+            "No inventes autor, fecha, URL, cita ni referencia; si no hay una fuente suficiente, no la incluyas. "
             "No uses 'Autor desconocido', 'Sin autor confirmado' ni 's.f.' cuando la fuente muestre datos verificables."
         )
         return self._generate(
-            fields=("estado_arte", "referencias"),
+            fields=("estado_arte",),
             schema_name="informe_tecnico_final_estado_arte",
             project=project,
             extra=self._report_extra(form_data, previous_sections),
@@ -347,6 +354,47 @@ class ClosureContentService:
                 },
             }],
             timeout=300.0,
+        )
+
+    def _generate_bibliography(
+        self,
+        *,
+        project: dict[str, Any],
+        form_data: dict[str, Any],
+        content: dict[str, str],
+    ) -> dict[str, str]:
+        instructions = (
+            self._report_base_instructions()
+            + " Seccion: referencias bibliograficas. A partir exclusivamente de las citas y "
+            "fuentes usadas en el campo estado_arte incluido en el contexto, entrega todas y "
+            "solo esas referencias en formato APA 7. Escribe una referencia por linea. No "
+            "incluyas titulos, explicaciones, numeracion, vinetas, tablas Markdown, barras "
+            "verticales, columnas ni una nueva investigacion. Cada referencia debe contener "
+            "los datos verificables disponibles de autor u organizacion, fecha, titulo y URL."
+        )
+        result = self._generate(
+            fields=("referencias",),
+            schema_name="informe_tecnico_final_referencias",
+            project=project,
+            extra=self._report_extra(form_data, content),
+            instructions=instructions,
+            max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
+        )
+        if not self._valid_bibliography(result["referencias"]):
+            raise ProjectContentError(
+                "OpenAI no devolvio referencias bibliograficas validas. "
+                "Intenta generar nuevamente el informe."
+            )
+        return result
+
+    @staticmethod
+    def _valid_bibliography(value: Any) -> bool:
+        references = [line.strip() for line in str(value).splitlines() if line.strip()]
+        forbidden = ("|", "```", "---", "proyecto / tecnologia")
+        return bool(references) and not any(
+            token in reference.casefold()
+            for reference in references
+            for token in forbidden
         )
 
     def generate_canvas(

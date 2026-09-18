@@ -142,6 +142,11 @@ class FinalReportDocumentService:
             if self._normalize(paragraph.text) == normalized_heading:
                 next_paragraph = paragraphs[index + 1]
                 normalized_target = self._normalize(heading)
+                if normalized_target.startswith("13. referencias") and "|" in value:
+                    raise ClosureDocumentError(
+                        "Las referencias bibliograficas contienen una tabla. "
+                        "Regenera el contenido para obtener solo referencias APA 7."
+                    )
                 if normalized_target.startswith("5. estado"):
                     self._replace_state_of_art(document, next_paragraph, value)
                     return
