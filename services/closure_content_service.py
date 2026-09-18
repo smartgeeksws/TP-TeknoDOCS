@@ -92,6 +92,31 @@ class ClosureContentService:
                         ),
                     )
                 )
+            elif field == "objetivos_especificos":
+                saved_objectives = self._saved_specific_objectives(form_data)
+                if saved_objectives:
+                    content[field] = saved_objectives
+                else:
+                    content.update(
+                        self._generate(
+                            fields=(field,),
+                            schema_name="informe_tecnico_final_objetivos_especificos",
+                            project=project,
+                            extra=self._report_extra(form_data, content),
+                            instructions=(
+                                instructions
+                                + self._section_instructions(field)
+                                + " Devuelve entre dos y cinco objetivos completos; "
+                                "no devuelvas caracteres JSON, llaves ni texto incompleto."
+                            ),
+                            max_output_tokens=self.REPORT_MAX_OUTPUT_TOKENS,
+                        )
+                    )
+                    if not self._valid_specific_objectives(content[field]):
+                        raise ProjectContentError(
+                            "OpenAI no devolvio objetivos especificos validos. "
+                            "Verifica los objetivos guardados en el diagnostico e intenta nuevamente."
+                        )
             elif field != "referencias":
                 content.update(
                     self._generate(
@@ -253,6 +278,25 @@ class ClosureContentService:
             extra["apartados_previos_para_evitar_repeticion"] = previous
         return extra
 
+    @staticmethod
+    def _saved_specific_objectives(form_data: dict[str, Any]) -> str:
+        diagnostic = form_data.get("contexto_diagnostico") or {}
+        objectives = diagnostic.get("objetivos_especificos", [])
+        if isinstance(objectives, str):
+            objectives = objectives.splitlines()
+        if not isinstance(objectives, list):
+            return ""
+        clean = [str(item).strip() for item in objectives if str(item).strip()]
+        return "\n".join(clean)
+
+    @staticmethod
+    def _valid_specific_objectives(value: Any) -> bool:
+        objectives = [line.strip() for line in str(value).splitlines() if line.strip()]
+        return bool(objectives) and all(
+            len(objective) >= 12 and not set(objective) <= {"{", "}"}
+            for objective in objectives
+        )
+
     def _generate_state_of_art(
         self,
         *,
@@ -261,9 +305,20 @@ class ClosureContentService:
         previous_sections: dict[str, str],
         on_retry: Callable[[], None] | None,
     ) -> dict[str, str]:
+        has_diagnostic = bool(form_data.get("contexto_diagnostico"))
+        planning_reference = (
+            "Inicia con una referencia clara a que durante la fase de planeacion se "
+            "elaboro el Diagnostico del proyecto y Estado del Arte, y recomienda revisar "
+            "ese documento para complementar los antecedentes y las fuentes. "
+            if has_diagnostic
+            else "No afirmes que se elaboro o consulto un Estado del Arte durante la planeacion "
+            "si el contexto no aporta ese documento. "
+        )
         instructions = (
             self._report_base_instructions()
-            + " Seccion: estado del arte y estado de la tecnica. Consulta fuentes externas reales y selecciona entre "
+            + " Seccion: estado del arte y estado de la tecnica. "
+            + planning_reference
+            + "Consulta fuentes externas reales y selecciona entre "
             "tres y cinco referentes directamente relacionados con la descripcion, tecnologias previstas o actividades "
             "del proyecto. Incluye desarrollos, tecnologias, articulos o soluciones comparables cuando existan fuentes "
             "adecuadas. Explica las coincidencias, diferencias y el posible aporte innovador sin afirmar novedades no verificadas. "

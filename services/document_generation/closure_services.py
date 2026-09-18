@@ -249,25 +249,17 @@ class FinalReportDocumentService:
         table = document.add_table(rows=1, cols=3)
         table.style = "Table Grid"
         for index, header in enumerate(
-            ("Entregable", "Descripción del entregable", "Enlace / Evidencia")
+            ("No.", "Nombre del entregable", "Evidencia o enlace")
         ):
             self._set_cell(table.rows[0].cells[index], header, bold=True)
-        for deliverable in self._form_lines(raw_deliverables):
-            name, description = self._deliverable_parts(deliverable)
+        for number, deliverable in enumerate(
+            self._form_lines(raw_deliverables), start=1
+        ):
             cells = table.add_row().cells
-            self._set_cell(cells[0], name)
-            self._set_cell(cells[1], description)
+            self._set_cell(cells[0], str(number))
+            self._set_cell(cells[1], deliverable)
             self._set_cell(cells[2], "")
         anchor._p.addnext(table._tbl)
-
-    @staticmethod
-    def _deliverable_parts(value: str) -> tuple[str, str]:
-        for separator in (" - ", ": "):
-            if separator in value:
-                name, description = value.split(separator, 1)
-                if name.strip() and description.strip():
-                    return name.strip(), description.strip()
-        return value, ""
 
     @staticmethod
     def _form_lines(value: Any) -> list[str]:

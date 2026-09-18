@@ -37,7 +37,6 @@ REPORT_LABELS = {
     "impacto": "Impacto",
     "conclusiones": "Conclusiones",
     "referencias": "Referencias bibliográficas",
-    "anexos": "Anexos",
 }
 
 CANVAS_LABELS = BusinessModelPdfService.LABELS
