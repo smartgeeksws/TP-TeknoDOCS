@@ -222,7 +222,11 @@ class FinalReportDocumentService:
             self._replace_paragraph(paragraph, value)
             return
         self._replace_paragraph(paragraph, "")
-        anchor = paragraph
+        anchor = self._paragraph_after(document, paragraph)
+        self._replace_paragraph(
+            anchor,
+            "A continuación se detallan las actividades desarrolladas y sus respectivas evidencias, de acuerdo con la metodología establecida y los productos entregados.",
+        )
         for index, activity in enumerate(activities):
             title = self._paragraph_after(document, anchor)
             self._replace_paragraph(title, f"Actividad {index + 1}: {activity}", bold=True)
@@ -330,11 +334,10 @@ class FinalReportDocumentService:
         self._replace_after_heading(document, "Objetivos", "")
 
     def _insert_normativity(self, document: Document, value: str) -> None:
-        paragraphs = document.paragraphs
-        for index, paragraph in enumerate(paragraphs[:-1]):
-            if self._normalize(paragraph.text) == self._normalize("7. Desarrollo del proyecto"):
+        for paragraph in document.paragraphs:
+            if self._normalize(paragraph.text) == self._normalize("8. Resultados obtenidos"):
                 heading = document.add_paragraph()
-                paragraphs[index + 1]._p.addnext(heading._p)
+                paragraph._p.addprevious(heading._p)
                 heading.add_run("8. Normatividad").bold = True
                 body = document.add_paragraph()
                 heading._p.addnext(body._p)
